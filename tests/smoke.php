@@ -12,7 +12,10 @@ try {
     $s=$db->query('SELECT * FROM sites')->fetch();
     expect($s['state']==='down' && str_contains($s['error'],'genel internete'),'Özel ağ isteği engellenir ve kaydedilir');
     expect(!checkSite($id),'Zamanı gelmeyen kontrol atlanır');
+    $db->exec('UPDATE sites SET interval_seconds=86400');
     expect(checkSite($id,true),'Manuel kontrol aralığı beklemez');
+    $retry=$db->query('SELECT next_check-checked_at FROM sites')->fetchColumn();
+    expect((int)$retry===300,'Hatalı kontrol 24 saat yerine 5 dakika sonra tekrar edilir');
     $db->exec('UPDATE sites SET lease_until='.(time()+120));
     expect(!checkSite($id,true),'Manuel kontrol de etkin kilide uyar');
     expect((int)$db->query('SELECT COUNT(*) FROM checks')->fetchColumn()===2,'İki gerçek kontrol geçmişe yazılır');

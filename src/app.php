@@ -28,11 +28,15 @@ function validateUrl(string $url): string {
 function publicAddresses(string $host): array {
     if (filter_var($host, FILTER_VALIDATE_IP)) $ips = [$host];
     else {
-        $records = @dns_get_record($host, DNS_A | DNS_AAAA);
-        $ips = array_values(array_filter(array_map(fn($r)=>$r['ip'] ?? $r['ipv6'] ?? null, $records ?: [])));
+        $records = array_merge(@dns_get_record($host, DNS_A) ?: [], @dns_get_record($host, DNS_AAAA) ?: []);
+        $ips = array_values(array_filter(array_map(fn($r)=>$r['ip'] ?? $r['ipv6'] ?? null, $records)));
+        // Fall back to the system IPv4 resolver when direct DNS record lookup fails.
+        if (!$ips) $ips = @gethostbynamel($host) ?: [];
     }
     if (!$ips) throw new RuntimeException('DNS adresi çözümlenemedi.');
     foreach ($ips as $ip) if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) || str_starts_with(strtolower($ip),'::ffff:') || str_starts_with(strtolower($ip),'ff') || (filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4) && (int)explode('.',$ip)[0]>=224)) throw new RuntimeException('Yalnızca genel internete açık adresler izlenebilir.');
+    $ips=array_values(array_unique($ips));
+    usort($ips,fn($a,$b)=>(int)str_contains($a,':')<=>(int)str_contains($b,':'));
     return $ips;
 }
 function redirectUrl(string $base, string $location): string {
@@ -55,10 +59,16 @@ function probe(string $url): array {
             validateUrl($url); $p=parse_url($url); $host=trim($p['host'], '[]');
             $port=$p['port'] ?? ($p['scheme']==='https' ? 443 : 80);
             if (!in_array($port,[80,443],true)) throw new RuntimeException('Yalnızca 80 ve 443 portları desteklenir.');
-            $ips=publicAddresses($host); $ip=$ips[0]; $location=null; $bytes=0; $truncated=false;
+            $ips=publicAddresses($host);$ok=false;$truncated=false;$err='Bağlantı kurulamadı.';
+            foreach(array_slice($ips,0,4) as $ip) {
+            $remaining=(int)floor(75-(microtime(true)-$start));
+            if($remaining<1)throw new RuntimeException('Toplam kontrol süresi aşıldı.');
+            $location=null; $bytes=0; $truncated=false;
             $ch=curl_init($url);
-            curl_setopt_array($ch,[CURLOPT_FOLLOWLOCATION=>false,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_TIMEOUT=>15,CURLOPT_PROXY=>'',CURLOPT_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,CURLOPT_USERAGENT=>'WebKontrol/1.0',CURLOPT_RESOLVE=>[$host.':'.$port.':'.(str_contains($ip,':')?'['.$ip.']':$ip)],CURLOPT_HEADERFUNCTION=>function($ch,$line)use(&$location){if(stripos($line,'Location:')===0)$location=trim(substr($line,9));return strlen($line);},CURLOPT_WRITEFUNCTION=>function($ch,$data)use(&$bytes,&$truncated){$bytes+=strlen($data); if($bytes>1048576){$truncated=true;return 0;}return strlen($data);}]);
+            curl_setopt_array($ch,[CURLOPT_FOLLOWLOCATION=>false,CURLOPT_CONNECTTIMEOUT=>5,CURLOPT_TIMEOUT=>min(15,$remaining),CURLOPT_PROXY=>'',CURLOPT_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,CURLOPT_USERAGENT=>'WebKontrol/1.0',CURLOPT_RESOLVE=>[$host.':'.$port.':'.(str_contains($ip,':')?'['.$ip.']':$ip)],CURLOPT_HEADERFUNCTION=>function($ch,$line)use(&$location){if(stripos($line,'Location:')===0)$location=trim(substr($line,9));return strlen($line);},CURLOPT_WRITEFUNCTION=>function($ch,$data)use(&$bytes,&$truncated){$bytes+=strlen($data); if($bytes>1048576){$truncated=true;return 0;}return strlen($data);}]);
             $ok=curl_exec($ch); $status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE); $err=curl_error($ch); curl_close($ch);
+            if ($ok!==false || $truncated)break;
+            }
             if ($ok===false && !$truncated) throw new RuntimeException($err);
             if ($status>=300 && $status<400 && $location) {
                 if ($hop===5) throw new RuntimeException('Çok fazla yönlendirme.');
@@ -81,7 +91,7 @@ function checkSite(int $id, bool $force=false): bool {
     $db->beginTransaction();
     try {
         $db->prepare('INSERT INTO checks(site_id,checked_at,state,status,latency,error) VALUES(?,?,?,?,?,?)')->execute([$id,$at,$r['state'],$r['status'],$r['latency'],$r['error']]);
-        $db->prepare('UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0 WHERE id=?')->execute([$at,$r['state'],$r['status'],$r['latency'],$r['error'],$at+(int)$s['interval_seconds'],$id]);
+        $db->prepare('UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0 WHERE id=?')->execute([$at,$r['state'],$r['status'],$r['latency'],$r['error'],$at+($r['state']==='down'?min(300,(int)$s['interval_seconds']):(int)$s['interval_seconds']),$id]);
         $db->prepare('DELETE FROM checks WHERE checked_at < ?')->execute([$at-90*86400]);$db->commit();
     } catch(Throwable $e){$db->rollBack();throw $e;}
     return true;

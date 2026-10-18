@@ -27,7 +27,7 @@ Windows Görev Zamanlayıcı'da `php.exe` ile `bin/check.php` dosyasını dakika
 
 - HTTP 200–399: erişilebilir; 400–599, DNS/TLS/bağlantı hatası veya zaman aşımı: kesinti / hata.
 - Kontroller GET isteği yapar; gövdenin ilk yaklaşık 1 MB'ından sonrası indirilmez. TLS doğrulaması açıktır.
-- Her bağlantıda 5 saniye bağlantı, 15 saniye toplam zaman aşımı; en fazla 5 yönlendirme.
+- Her IP denemesinde 5 saniye bağlantı, 15 saniye istek zaman aşımı; toplam HTTP denemeleri için 75 saniyelik bütçe; en fazla 5 yönlendirme.
 - Yalnızca internete açık HTTP/HTTPS adresleri ve 80/443 portları desteklenir. Yerel/özel IP adresleri engellenir; DNS sonucu bağlantıya sabitlenir. Doğrudan internet çıkışı gerekir; proxy üzerinden özel ağ izleme amaçlanmaz.
 - Erişilebilirlik yüzdesi son 30 gündeki başarılı kontrol örneklerinin oranıdır; gerçek kesinti süresi değildir. Kontrol yapılmayan süreler başarılı kabul edilmez. Geçmiş 90 gün saklanır. Son 20 kontrol panelde görünür.
 - Bir HTTP yanıtı sitenin tüm işlevlerinin sağlıklı olduğunu kanıtlamaz. Bakım, WAF ve bot engeli de hata sonucu verebilir.
@@ -76,3 +76,9 @@ Smoke testi geçici SQLite veritabanıyla kayıt, kontrol, zamanlama, kilit, ge�
 ## Toplu ekleme hatalarını giderme
 
 Eski cPanel SQLite sürümleriyle uyumluluk için toplu ekleme `INSERT OR IGNORE` kullanır; SQLite 3.24+ gerektiren UPSERT sözdizimine ihtiyaç duymaz. Tekrar URL'ler atlanır. Bir işlem başarısız olursa form metni korunur ve veritabanı hatası yönetici panelinde gösterilir. Yazma izni hatasında `var/` dizininin, SQLite dosyasının ve varsa WAL/SHM dosyalarının PHP kullanıcısına ait olduğunu kontrol edin; 777 izni vermeyin. Cron ve web PHP işlemlerinin aynı kullanıcı ve veri diziniyle çalışması gerekir.
+
+## Geçici DNS ve bağlantı hataları
+
+A ve AAAA kayıtları ayrı sorgulanır; bir kayıt türünün başarısız olması diğerini geçersiz kılmaz. Doğrudan sorgular sonuç vermezse sistemin IPv4 çözümleyicisi denenir. Bulunan bütün IP'ler özel ağ kontrolünden geçer. IPv4 adresleri önce denenir; bağlantı/TLS/taşıma hatasında en fazla dört farklı IP denenir. Geçerli bir HTTP yanıtı alındığında diğer IP'lerle bu yanıt gizlenmez; HTTP 4xx/5xx hataları hata olarak kalır. TLS doğrulaması korunur; HTTPS başarısızlığında HTTP'ye otomatik düşürülmez.
+
+Kesinti/hata durumunda sonraki kontrol normal aralık veya 5 dakikadan kısa olanıdır. Başarılı sonuçtan sonra normal aralığa dönülür. Bu, geçici hataların 24 saat panelde kalmasını önler; cron çalışmalıdır. DNS sorgularının süresi işletim sistemi çözümleyicisine bağlıdır. Sunucunun DNS/IPv6/443 çıkış sorunları veya hedef güvenlik duvarı engelleri ayrıca hosting sağlayıcısı tarafından incelenmelidir.
