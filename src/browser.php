@@ -15,7 +15,7 @@ function enableBrowser(): void {
 }
 function claimBrowserJobs(int $limit=6): array {
     $db=db();$now=time();$jobs=[];
-    $rows=$db->query('SELECT * FROM sites WHERE next_check<='.$now.' AND lease_until<='.$now.' ORDER BY next_check,id LIMIT '.max(1,min(6,$limit)))->fetchAll();
+    $rows=$db->query('SELECT * FROM sites WHERE next_check<='.$now.' AND lease_until<='.$now.' ORDER BY CASE WHEN next_check=0 THEN 0 ELSE 1 END,CASE WHEN state=\'down\' THEN 0 ELSE 1 END,next_check,id DESC LIMIT '.max(1,min(6,$limit)))->fetchAll();
     foreach($rows as $site) {
         $nonce=bin2hex(random_bytes(24));
         $q=$db->prepare('UPDATE sites SET lease_until=?,browser_job=? WHERE id=? AND lease_until<=? AND next_check<=?');

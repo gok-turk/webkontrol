@@ -9,7 +9,7 @@ try {
     verifyBrowser(strlen(trim((string)file_get_contents($dir.'/browser-token')))===64,'Bağımsız API anahtarı oluşturulur');
     verifyBrowser(is_file($dir.'/.htaccess'),'Veri dizini Apache erişimine kapatılır');
     verifyBrowser(!checkSite(1,true),'Tarayıcı modunda eski yerel kontrol devre dışıdır');
-    $jobs=claimBrowserJobs();verifyBrowser(count($jobs)===2 && count(claimBrowserJobs())===0,'İşler tek kez ve süreli kilitle atanır');
+    $jobs=claimBrowserJobs();usort($jobs,fn($a,$b)=>$a['id']<=>$b['id']);verifyBrowser(count($jobs)===2 && count(claimBrowserJobs())===0,'İşler tek kez ve süreli kilitle atanır');
     $result=['id'=>1,'job'=>$jobs[0]['job'],'state'=>'up','status'=>200,'latency'=>1500,'error'=>null];
     try{acceptBrowserResult($result+['screenshot'=>'invalid']);throw new LogicException('Geçersiz resim kabul edildi');}catch(InvalidArgumentException $e){echo 'PASS Geçersiz resim reddedilir'.PHP_EOL;}
     acceptBrowserResult($result);

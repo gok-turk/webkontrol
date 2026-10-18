@@ -156,3 +156,11 @@ Bu güncellemede sunucuya `src/app.php`, `public/index.php`, `public/style.css`,
 Kaydedilmiş bir sonucun yanıtı bağlantıda kaybolursa aynı nonce ile tekrar gönderim geçmişte ikinci kayıt oluşturmaz. Bir yükleme başarısız olduğunda diğer atanmış işler tamamlanmaya çalışılır; panel sürekli erişilemezse yeni iş alınmaz. Kaydedilemeyen sonuçlar siteyi otomatik olarak kapalı yapmaz; önceki durum korunur ve 10 dakikalık iş kilidi dolunca sonraki workflow işi yeniden alır. Çalışma özetinde kaydedilen ve tamamlanamayan sonuç sayıları görünür. Kalıcı hosting firewall/IP veya bağlantı limiti engelini tekrar denemeler aşamaz; bu durumda hosting panel alan adının 443 portuna GitHub runner erişimini incelemelidir.
 
 Bu düzeltmeyi uygulamak için cPanel'de **`src/app.php` ve `src/browser.php`** dosyalarını yenileyin. Anahtar ve mevcut ayarlar değişmez. GitHub'da **Actions → Browser monitoring → Run workflow → main** ile yeni çalışma başlatın; eski çalışmadaki **Re-run jobs** eski commit'i kullanabileceği için güncel kodu test etmez.
+
+## Workflow başarılı ama hata filtresindeki kartlar eski görünüyorsa
+
+Bir çalışma bütün listeyi bitirmek zorunda değildir: `Completed browser checks: 78` yalnızca o turda 78 sonucun kaydedildiğini gösterir. Worker süre bütçesinden sonra kalan kayıtlar sonraki tura kalır. Ayrıca panel **Kesinti / hata** filtresindeyken başarılı duruma geçen siteler listeden çıkar; eski hatalı kartların görünmeye devam etmesi tek başına kaydın çalışmadığını göstermez. **İzlenen site** kartıyla tüm sonuçları görebilirsiniz.
+
+Panelde **Tarayıcı kontrolü: X / toplam** sayacı hangi sitelere gerçekten Chromium sonucu geldiğini gösterir. Henüz tarayıcı sonucu gelmeyen cPanel kayıtları **Tarayıcı sonucu bekleniyor** diye işaretlenir; eski hata ayrıntısı kapalı bir açıklamada korunur. Özet durum sayıları son kayıtları içerir ve yeni sonuç geldikçe değişir. Kuyruk manuel bekleyen işleri, aralarında eski hatalı kayıtları ve paneldeki en yeni siteleri önceliklendirir. İlerlemeyi görmek için sayfayı yenileyin; **Tümünü kontrol et** düğmesine her yenilemede yeniden basmayın.
+
+Bu görünüm ve öncelik güncellemesi için `src/browser.php`, `public/index.php`, `public/style.css` dosyalarını cPanel'de yenileyin. `var/` ve anahtar korunur.
