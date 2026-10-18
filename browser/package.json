@@ -1,0 +1,1 @@
+{"name":"webkontrol-browser","private":true,"type":"module","scripts":{"check":"node monitor.mjs","test":"node --test test/*.test.mjs"},"dependencies":{"playwright":"1.62.1"}}

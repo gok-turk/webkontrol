@@ -10,9 +10,9 @@ function db(): PDO {
     $db->exec('PRAGMA busy_timeout=10000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
     $db->exec('CREATE TABLE IF NOT EXISTS sites (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, interval_seconds INTEGER NOT NULL, next_check INTEGER NOT NULL DEFAULT 0, checked_at INTEGER, state TEXT, status INTEGER, latency INTEGER, error TEXT, thumbnail TEXT, lease_until INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS checks (id INTEGER PRIMARY KEY, site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE, checked_at INTEGER NOT NULL, state TEXT NOT NULL, status INTEGER, latency INTEGER NOT NULL, error TEXT); CREATE INDEX IF NOT EXISTS checks_site_time ON checks(site_id, checked_at);');
     $columns=array_column($db->query('PRAGMA table_info(sites)')->fetchAll(),'name');
-    foreach (['thumbnail_at','thumbnail_next','thumbnail_lease','thumbnail_error'] as $column) {
+    foreach (['thumbnail_at','thumbnail_next','thumbnail_lease','thumbnail_error','browser_job','check_source'] as $column) {
         if (!in_array($column,$columns,true)) {
-            try {$db->exec('ALTER TABLE sites ADD COLUMN '.$column.($column==='thumbnail_error'?' TEXT':' INTEGER NOT NULL DEFAULT 0'));}
+            try {$db->exec('ALTER TABLE sites ADD COLUMN '.$column.(in_array($column,['thumbnail_error','browser_job','check_source'],true)?' TEXT':' INTEGER NOT NULL DEFAULT 0'));}
             catch(PDOException $e) {if(!in_array($column,array_column($db->query('PRAGMA table_info(sites)')->fetchAll(),'name'),true))throw $e;}
         }
     }
@@ -108,6 +108,7 @@ function probe(string $url): array {
     return ['state'=>!$error && $status>=200 && $status<400?'up':'down','status'=>$status,'latency'=>(int)round((microtime(true)-$start)*1000),'error'=>$error];
 }
 function checkSite(int $id, bool $force=false): bool {
+    if(browserEnabled())return false;
     $db=db(); $now=time();
     // Atomic lease prevents cron and manual requests from checking the same site concurrently.
     $q=$db->prepare('UPDATE sites SET lease_until=? WHERE id=? AND lease_until<=? AND (CAST(? AS INTEGER)=1 OR next_check<=?)');
@@ -115,10 +116,14 @@ function checkSite(int $id, bool $force=false): bool {
     if (!$q->rowCount()) return false;
     $q=$db->prepare('SELECT * FROM sites WHERE id=?');$q->execute([$id]);$s=$q->fetch();if(!$s)return false;
     $r=probe($s['url']);$at=time();
+    if(browserEnabled()) {
+        $db->prepare('UPDATE sites SET lease_until=0,next_check=0 WHERE id=? AND lease_until=? AND browser_job IS NULL')->execute([$id,$now+120]);
+        return false;
+    }
     $db->beginTransaction();
     try {
         $db->prepare('INSERT INTO checks(site_id,checked_at,state,status,latency,error) VALUES(?,?,?,?,?,?)')->execute([$id,$at,$r['state'],$r['status'],$r['latency'],$r['error']]);
-        $db->prepare('UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0 WHERE id=?')->execute([$at,$r['state'],$r['status'],$r['latency'],$r['error'],$at+($r['state']==='down'?min(300,(int)$s['interval_seconds']):(int)$s['interval_seconds']),$id]);
+        $db->prepare('UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0,check_source=\'server\' WHERE id=?')->execute([$at,$r['state'],$r['status'],$r['latency'],$r['error'],$at+($r['state']==='down'?min(300,(int)$s['interval_seconds']):(int)$s['interval_seconds']),$id]);
         $db->prepare('DELETE FROM checks WHERE checked_at < ?')->execute([$at-90*86400]);$db->commit();
     } catch(Throwable $e){$db->rollBack();throw $e;}
     return true;
@@ -196,4 +201,8 @@ function databaseError(PDOException $e): string {
 function queueChecks(bool $onlyDown=false): int {
     $q=db()->prepare('UPDATE sites SET next_check=0'.($onlyDown?" WHERE state='down'":''));
     $q->execute();return $q->rowCount();
+}
+
+function browserEnabled(): bool {
+    return is_file(dataDir().'/browser-enabled') && is_file(dataDir().'/browser-token');
 }

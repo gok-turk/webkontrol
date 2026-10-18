@@ -1,2 +1,4 @@
 /var/
 /.runtime/
+
+/browser/node_modules/

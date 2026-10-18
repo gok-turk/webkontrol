@@ -3,6 +3,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require __DIR__.'/../src/app.php';
 $db=db();
+if(browserEnabled())exit(0);
 $lock=fopen(dataDir().'/cron.lock','c');
 if(!$lock || !flock($lock,LOCK_EX|LOCK_NB))exit;
 // Bound each invocation; later runs continue the queue, including large imports.

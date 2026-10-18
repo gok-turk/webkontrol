@@ -1,0 +1,7 @@
+# Keep the existing public/.htaccess and its password configuration.
+# Prefer pointing the domain document root directly at public/.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule ^(?:var|src|bin|tests|browser|\.git|\.github)(?:/|$) - [F,L]
+RewriteRule ^(?:README\.md|\.gitignore)$ - [F,L]
+</IfModule>

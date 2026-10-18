@@ -2,6 +2,50 @@
 
 Framework veya Composer gerektirmeyen, PDO SQLite tabanlı site erişilebilirlik paneli. PHP 8.1+ ve `pdo_sqlite`, `curl` eklentileri gerekir. Linux, macOS veya Windows üzerinde uygun PHP kurulumu ile çalışır.
 
+## Ücretsiz gerçek Chromium kontrolü — önerilen mod
+
+cPanel sunucusunun kendi dış IP'sine erişimi engelliyse **GitHub Actions** üzerindeki Chromium tarayıcısıyla sitelerinizi açabilirsiniz. Kontrol ve ekran görüntüsü aynı tarayıcı oturumunda yapılır; cPanel yalnızca panel/API/SQLite için kullanılır. Bu modda thum.io veya ücretli tarayıcı servisi kullanılmaz.
+
+**Ücretsiz kullanım koşulu:** public GitHub deposunda standart GitHub-hosted runner kullanın. Private depo Actions kotasını tüketir ve ücret doğurabilir; ücretli veya büyük runner seçmeyin. GitHub'ın güncel kullanım koşulları ve limitleri geçerlidir. Workflow'da yalnızca `ubuntu-latest` standart runner kullanılır. Tarayıcı bağımlılıkları için Composer gerekmez; cPanel'e Node veya Chromium kurulmaz.
+
+### Mevcut cPanel kurulumunda etkinleştirme
+
+1. Güncel `src/app.php`, `src/browser.php`, `public/index.php`, `public/style.css`, `public/browser-api.php`, `bin/check.php` dosyalarını sunucuya yükleyin. Proje kökündeki yeni `.htaccess` kurallarını da yükleyin; mevcut kök `.htaccess` dosyanız varsa kuralları birleştirin, kullanıcı ayarlarını silmeyin. **`public/.htaccess` ve parolanızı, `var/` dizinini silmeyin.** Tarayıcı modu açılırken veri dizinine `Require all denied` koruması eklenir; mevcut koruma dosyası değiştirilmez. Tercihen alan adının document root'unu doğrudan `public/` yapın. `.git`, kaynak ve veri dizinlerini internetten erişilebilir bırakmayın.
+2. Panelde **Ücretsiz gerçek tarayıcı kontrolü → Tarayıcı modunu etkinleştir** seçin. Benzersiz bir `MONITOR_API_TOKEN` üretilir ve mevcut siteler kontrol kuyruğuna alınır. Anahtar panel parolasından ayrıdır; sunucuda `var/browser-token` dosyasında tutulur. Bu dosyayı Git'e eklemeyin veya paylaşmayın.
+3. GitHub → `gok-turk/webkontrol` → **Settings → Secrets and variables → Actions → Secrets → New repository secret**: ad `MONITOR_API_TOKEN`, değer panelde gösterilen anahtar. Anahtarı sohbet veya kaynak koduna yazmayın.
+4. Aynı bölümde **Variables → New repository variable**: ad `MONITOR_PANEL_URL`, değer `https://kontrol.mg.web.tr/webkontrol/public/`. Workflow bu adresi varsayılan olarak da kullanır; farklı kurulumda tam panel adresini ve sondaki `/` işaretini belirtin. HTTPS zorunludur.
+5. GitHub → **Actions → Browser monitoring → Run workflow → main → Run workflow**. Actions kapalıysa repository ayarlarından etkinleştirin. Sonuç geldikçe paneli yenileyin; kartta **Kontrol kaynağı: GitHub Chromium** görünür. Önceki sunucu kontrolleri geçmişten silinmez ve yeni sonuç gelene kadar son durum olarak kalabilir.
+
+### Zamanlama ve manuel kontroller
+
+Workflow yaklaşık **15 dakikada bir** çalışır ve sadece zamanı gelmiş/kuyruğa alınmış siteleri kontrol eder. Siteye özel varsayılan aralık 24 saattir; hatalar 5 dakika sonra yeniden uygun hale gelir fakat bir sonraki workflow çalışmasında işlenir. GitHub zamanlaması gecikebilir, dakik çalışmayı garanti etmez. **Şimdi kontrol et / Tümünü kontrol et / Kesinti olanları kontrol et** düğmeleri kuyruğa ekler. Hemen başlatmak için GitHub'daki **Run workflow** düğmesini kullanın. Paneldeki düğmelerin GitHub workflow'unu doğrudan tetiklemesi için ek GitHub yazma anahtarı gerekmemesi amaçlanmıştır.
+
+Bir çalışmada üç tarayıcı sekmesi paralel, toplam yaklaşık 8 dakikalık kontrol bütçesi kullanılır. Büyük listeler sonraki workflow turunda devam edebilir. İşler 10 dakika süreli nonce/kilitle atanır; kesilen işler sonra yeniden alınabilir. Aynı workflow grubundan birden fazla çalışma paralel yürütülmez. GitHub public depolarda uzun süre repository etkinliği olmazsa zamanlanmış workflow'ları otomatik kapatabilir (genellikle 60 gün); Actions ekranından kontrol edip yeniden açın.
+
+Bu modda mevcut cPanel cron'u sessizce çıkar; yerel cURL sonuçları tarayıcı sonuçlarını ezmez. Cron'u kaldırmak zorunlu değildir. Sunucudan kontrol moduna dönerseniz eski cron yeniden kullanılacaktır. API anahtarını yenilemek gerekirse tarayıcı modunu kapatın, `var/browser-token` dosyasını Dosya Yöneticisi'nden silin, modu tekrar açın ve GitHub secret'ını yeni anahtarla güncelleyin.
+
+### Başarı kriteri ve resimler
+
+Chromium HTTPS sertifikasını doğrulayarak sayfayı açar; DOM yüklenmesi, görüntülenebilir içerik ve son ana belge HTTP 200–399 sonucu aranır. Taşıma veya boş sayfa hatası bir kez yeni oturumda tekrar denenir. HTTP 4xx/5xx sonuçları başarılı sayılmaz. WAF, giriş duvarı veya bot engeli tarayıcı kontrolünü de engelleyebilir. Sayfanın açılması ödeme, form ve diğer tüm işlevlerin çalıştığını kanıtlamaz.
+
+İlk tarayıcı kontrolünde önceki thum.io resminin yerine yeni JPEG alınır; sonra resimler en fazla 24 saatte bir yenilenir. Daha kısa aralıklı durum kontrollerinde resim tekrar alınmayabilir. Resim hatası erişilebilirlik sonucunu değiştirmez; sonraki kontrol sırasında tekrar denenir. Ziyaretler GitHub IP'sinden yapılır; kayıtlı domainler ve sayfa içeriği GitHub üzerinde işlenir. Resimler ve sonuçlar cPanel'e geri gönderilir; public Actions artifact'ı olarak yayımlanmaz.
+
+### API ve tarayıcı güvenliği
+
+`public/browser-api.php` sadece anahtarlı POST isteklerini kabul eder; iş nonce'ı ve süresi denetlenir. Eski/tekrar sonuçlar reddedilir. Anahtar yalnızca panel API'sine gönderilir; ziyaret edilen sitelere veya Chromium işlem ortamına aktarılmaz. Runner'daki HTTP/HTTPS proxy her bağlantıda DNS'i çözümleyip genel IP'ye sabitler; özel/yerel ağlar, metadata adresleri ve 80/443 dışındaki portlar engellenir. Chromium bağlamları siteler arasında ayrıdır; TLS doğrulaması kapatılmaz.
+
+### Testler
+
+```sh
+php tests/browser.php
+cd browser
+npm ci --ignore-scripts
+npx playwright install --with-deps chromium
+npm test
+```
+
+Tarayıcı entegrasyon testi fixture için yerel 80 portunu kullanır; bu port boş ve test kullanıcısı için kullanılabilir olmalıdır. Sistem Chromium'u olan ortamda `CHROMIUM_PATH=/usr/bin/chromium npm test` kullanılabilir. Gerçek cPanel ve GitHub bağlantısı, yukarıdaki secret yapılandırıldıktan sonra ilk **Run workflow** ile ayrıca doğrulanmalıdır.
+
 ## Başlatma
 
 ```sh
@@ -13,7 +57,7 @@ Tarayıcıda 8080 portunu açın ve belirlediğiniz parola ile giriş yapın. Pa
 
 Üretimde PHP destekli HTTPS sunucusunun belge kökünü **yalnızca `public/`** dizinine ayarlayın. PHP'nin yerleşik sunucusu yerel geliştirme içindir. `src/`, `bin/` ve SQLite dosyalarını internete açmayın. Veri dizini varsayılan olarak `var/`; PHP işlemi burada yazabilmelidir. İsterseniz `MONITOR_DATA_DIR` ortam değişkeniyle web kökü dışında mutlak bir dizin belirleyin. SQLite dosyasını ve varsa WAL/SHM dosyalarını tutarlı bir SQLite yedeği ile yedekleyin.
 
-## Otomatik kontrol
+## cPanel kontrol modunda cron
 
 Linux cron örneği (PHP ve proje yollarını uyarlayın):
 
@@ -38,7 +82,7 @@ Panelde **Toplu domain ekle** alanına her satırda bir domain veya URL olacak �
 
 Yeni sitelerde varsayılan kontrol aralığı **1440 dakika (24 saat)**. Önceden eklenmiş sitelerin özel aralıkları değiştirilmez; karttaki aralık alanından düzenlenebilir.
 
-## Otomatik küçük resimler
+## cPanel kontrol modunda küçük resimler
 
 Küçük resim URL'si girilmez. Cron yeni sitelerin ana sayfa ekran görüntüsünü otomatik alır ve `var/thumbnails/` altında saklar. Başarılı indirmeden **24 saat sonra** yeniden ister; panel resimleri kendi sunucunuzdan, oturum kontrolüyle sunar. Sağlayıcı hatasında eski resim korunur, hata panelde gösterilir ve 1 saat sonra tekrar denenir. Ekran görüntüsü hatası sitenin erişilebilirlik sonucunu değiştirmez.
 
@@ -84,6 +128,8 @@ A ve AAAA kayıtları ayrı sorgulanır; bir kayıt türünün başarısız olma
 Kesinti/hata durumunda sonraki kontrol normal aralık veya 5 dakikadan kısa olanıdır. Başarılı sonuçtan sonra normal aralığa dönülür. Bu, geçici hataların 24 saat panelde kalmasını önler; cron çalışmalıdır. DNS sorgularının süresi işletim sistemi çözümleyicisine bağlıdır. Sunucunun DNS/IPv6/443 çıkış sorunları veya hedef güvenlik duvarı engelleri ayrıca hosting sağlayıcısı tarafından incelenmelidir.
 
 ## Toplu yeniden kontrol
+
+Aşağıdaki cron açıklaması cPanel kontrol modu içindir; tarayıcı modunda aynı kuyruğu GitHub Actions işler.
 
 Panelin üstündeki **Tümünü kontrol et** tüm kayıtları; **Kesinti olanları kontrol et** yalnızca son durumu `down` olanları, seçili liste filtresinden bağımsız kontrol kuyruğuna alır. Bu düğmeler HTTP isteğinde yüzlerce siteyi kontrol etmez. Dakikalık cron kuyruğu küçük resimlerden önce işler; bekleyen kayıt sayısı panelde görünür. Sonuçları **Sonuçları yenile** bağlantısıyla takip edin. Var olan işlem kilitleri korunur; toplu kontrol sitelerin normal kontrol aralığını değiştirmez.
 
