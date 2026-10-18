@@ -107,7 +107,7 @@ function importSites(string $text, int $minutes=1440): array {
     if($minutes<1 || $minutes>1440)throw new InvalidArgumentException('Aralık 1–1440 dakika olmalı.');
     $result=['added'=>0,'duplicates'=>0,'errors'=>[]];$db=db();$db->beginTransaction();
     try {
-        $q=$db->prepare('INSERT INTO sites(name,url,interval_seconds) VALUES(?,?,?) ON CONFLICT(url) DO NOTHING');
+        $q=$db->prepare('INSERT OR IGNORE INTO sites(name,url,interval_seconds) VALUES(?,?,?)');
         foreach($lines as $i=>$line) {
             try {$site=siteInput($line);}
             catch(InvalidArgumentException $e){$result['errors'][]='Satır '.($i+1).': '.$e->getMessage();continue;}
@@ -146,4 +146,12 @@ function refreshThumbnail(int $id): bool {
         $db->prepare('UPDATE sites SET thumbnail_error=?,thumbnail_next=?,thumbnail_lease=0 WHERE id=?')->execute([$e->getMessage(),time()+3600,$id]);
     }
     return true;
+}
+
+function databaseError(PDOException $e): string {
+    $code=(int)($e->errorInfo[1]??0);
+    if($code===8 || $code===14)return 'Veritabanına yazılamadı. var/ klasörü ve monitor.sqlite dosyası için PHP kullanıcısının yazma iznini kontrol edin. Veritabanı varsa WAL/SHM dosyaları için de klasöre yazma izni gerekir.';
+    if($code===5 || $code===6)return 'Veritabanı başka bir işlem tarafından kullanılıyor. Birkaç saniye sonra yeniden deneyin.';
+    if($code===13)return 'Sunucuda veritabanı için yeterli disk alanı yok.';
+    return 'Veritabanı işlemi başarısız (SQLite kodu: '.$code.'): '.$e->getMessage();
 }

@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             elseif ($action==='check') checkSite((int)($_POST['id']??0),true);
         } else throw new RuntimeException('Oturum açın.');
         header('Location: ./');exit;
-    } catch(Throwable $ex) {$error=$ex instanceof PDOException?'Kayıt işlemi başarısız. Bu adres zaten eklenmiş olabilir.':$ex->getMessage();}
+    } catch(Throwable $ex) {$error=$ex instanceof PDOException?databaseError($ex):$ex->getMessage();}
 }
 $auth=isset($_SESSION['auth']) && hash_equals(hash('sha256',$password),$_SESSION['auth']);
 if (isset($_GET['thumbnail'])) {
@@ -62,7 +62,7 @@ $sites=db()->query("SELECT s.*, (SELECT ROUND(100.0*SUM(state='up')/COUNT(*),2) 
 $up=count(array_filter($sites,fn($s)=>$s['state']==='up'));$down=count(array_filter($sites,fn($s)=>$s['state']==='down'));
 ?><section class="stats"><div><span>İzlenen site</span><strong><?=count($sites)?></strong></div><div><span>Erişilebilir</span><strong class="green"><?=$up?></strong></div><div><span>Kesinti / hata</span><strong class="red"><?=$down?></strong></div></section>
 <section class="add"><h2>Site ekle</h2><form method="post" class="grid single-add"><?php csrf();?><input type="hidden" name="action" value="add"><label>Domain veya URL<input name="url" placeholder="www.ornek.com veya https://ornek.com" required></label><label>Kontrol aralığı (dakika)<input type="number" name="minutes" value="1440" min="1" max="1440" required></label><button>Site ekle</button></form>
-<details class="bulk"><summary>Toplu domain ekle</summary><form method="post"><?php csrf();?><input type="hidden" name="action" value="bulk"><label>Her satıra bir domain veya URL (en fazla 1000)<textarea name="urls" rows="8" placeholder="ornek.com&#10;www.ikincisite.com&#10;https://ucuncusite.com" required></textarea></label><input type="hidden" name="minutes" value="1440"><button>Toplu ekle · 24 saat</button></form></details>
+<details class="bulk"<?= $error && ($_POST['action']??'')==='bulk' ? ' open' : '' ?>><summary>Toplu domain ekle</summary><form method="post"><?php csrf();?><input type="hidden" name="action" value="bulk"><label>Her satıra bir domain veya URL (en fazla 1000)<textarea name="urls" rows="8" placeholder="ornek.com&#10;www.ikincisite.com&#10;https://ucuncusite.com" required><?=e($_POST['urls']??'')?></textarea></label><input type="hidden" name="minutes" value="1440"><button>Toplu ekle · 24 saat</button></form></details>
 <p class="hint">Site adı domain üzerinden, başındaki www. kaldırılarak oluşturulur. Varsayılan kontrol aralığı 24 saattir. Kontroller ve otomatik küçük resimler için cron gereklidir. Küçük resim hizmeti: thum.io; site adresleri bu servise gönderilir.</p></section>
 <div class="section-title"><h2>Siteleriniz</h2><span>Son 30 gün · Kontrol örneklerine göre erişilebilirlik</span></div>
 <?php if(!$sites):?><section class="empty"><h2>İlk sitenizi ekleyin</h2><p>Kontrol sonuçları ve erişilebilirlik geçmişi burada görünecek.</p></section><?php endif;?>

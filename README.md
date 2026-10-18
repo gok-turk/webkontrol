@@ -72,3 +72,7 @@ find src public bin tests -name '*.php' -exec php -l {} \;
 Smoke testi geçici SQLite veritabanıyla kayıt, kontrol, zamanlama, kilit, geçmiş ve silmeyi sınar. Dış servis gerekmez.
 
 `tests/features.php` mevcut veritabanından yükseltmeyi ve 100 domainlik toplu eklemeyi sınar. Ekran görüntüsü indirme testleri için `MONITOR_SCREENSHOT_ENDPOINT` ile kontrollü bir HTTPS resim fixture'ı gerekir; normal çalışmada bu ağ testleri **UNRUN** olarak bildirilir. Fixture `invalid/` yolunda resim dışı bir yanıt döndürmelidir. Gerçek üçüncü taraf servis erişimi ayrıca sunucunuzda doğrulanmalıdır.
+
+## Toplu ekleme hatalarını giderme
+
+Eski cPanel SQLite sürümleriyle uyumluluk için toplu ekleme `INSERT OR IGNORE` kullanır; SQLite 3.24+ gerektiren UPSERT sözdizimine ihtiyaç duymaz. Tekrar URL'ler atlanır. Bir işlem başarısız olursa form metni korunur ve veritabanı hatası yönetici panelinde gösterilir. Yazma izni hatasında `var/` dizininin, SQLite dosyasının ve varsa WAL/SHM dosyalarının PHP kullanıcısına ait olduğunu kontrol edin; 777 izni vermeyin. Cron ve web PHP işlemlerinin aynı kullanıcı ve veri diziniyle çalışması gerekir.
