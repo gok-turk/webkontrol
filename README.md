@@ -82,3 +82,23 @@ Eski cPanel SQLite sürümleriyle uyumluluk için toplu ekleme `INSERT OR IGNORE
 A ve AAAA kayıtları ayrı sorgulanır; bir kayıt türünün başarısız olması diğerini geçersiz kılmaz. Doğrudan sorgular sonuç vermezse sistemin IPv4 çözümleyicisi denenir. Bulunan bütün IP'ler özel ağ kontrolünden geçer. IPv4 adresleri önce denenir; bağlantı/TLS/taşıma hatasında en fazla dört farklı IP denenir. Geçerli bir HTTP yanıtı alındığında diğer IP'lerle bu yanıt gizlenmez; HTTP 4xx/5xx hataları hata olarak kalır. TLS doğrulaması korunur; HTTPS başarısızlığında HTTP'ye otomatik düşürülmez.
 
 Kesinti/hata durumunda sonraki kontrol normal aralık veya 5 dakikadan kısa olanıdır. Başarılı sonuçtan sonra normal aralığa dönülür. Bu, geçici hataların 24 saat panelde kalmasını önler; cron çalışmalıdır. DNS sorgularının süresi işletim sistemi çözümleyicisine bağlıdır. Sunucunun DNS/IPv6/443 çıkış sorunları veya hedef güvenlik duvarı engelleri ayrıca hosting sağlayıcısı tarafından incelenmelidir.
+
+## Toplu yeniden kontrol
+
+Panelin üstündeki **Tümünü kontrol et** tüm kayıtları; **Kesinti olanları kontrol et** yalnızca son durumu `down` olanları, seçili liste filtresinden bağımsız kontrol kuyruğuna alır. Bu düğmeler HTTP isteğinde yüzlerce siteyi kontrol etmez. Dakikalık cron kuyruğu küçük resimlerden önce işler; bekleyen kayıt sayısı panelde görünür. Sonuçları **Sonuçları yenile** bağlantısıyla takip edin. Var olan işlem kilitleri korunur; toplu kontrol sitelerin normal kontrol aralığını değiştirmez.
+
+## Bağımsız DNS yedeği ve bağlantı tanısı
+
+Yerel DNS ve sistem çözümleyicisi sonuç vermezse TLS doğrulamalı DNS-over-HTTPS sorgusu yapılır: önce `cloudflare-dns.com`, sonra `dns.google`. Yalnızca domain adı ve kayıt türü gönderilir. Yerel DNS IP'sine taşıma/bağlantı/TLS hatası alınırsa bağımsız DNS sonucu ile yeni IP'ler de denenir. HTTPS DNS toplam yaklaşık 10 saniye ile sınırlıdır; A/AAAA yanıtları aynı özel ağ/IP kontrollerinden geçer. Sabit sağlayıcı IP'leri DNS arızası sırasında sağlayıcıya erişimi destekler. Sunucunun bu sağlayıcılara HTTPS çıkışı açık olmalıdır. HTTP 4xx/5xx yanıtları, TLS sorunları ve güvenlik duvarı engelleri resim var diye başarılı kabul edilmez.
+
+Ekran görüntüsü thum.io sunucusundan, erişilebilirlik kontrolü sizin PHP sunucunuzdan yapılır. Bu yüzden ekran görüntüsü mevcutken doğrudan kontrol başarısız olabilir. Ayrıca resim önceki bir zamanda alınmış olabilir. Script kendi sunucunuzun siteye erişimini ölçer; tarayıcınızın veya tüm internetin erişimini değil. HTTPS adresi eklenen bir sitede yalnızca HTTP çalışması da kesinti/hata sonucu verir; HTTPS başarısızlığında güvenliği düşürerek HTTP'ye geçilmez.
+
+cPanel Terminal veya SSH üzerinden sorunlu adres için tanı komutu:
+
+```sh
+/usr/local/bin/php /home/KULLANICI/kontrol.mg.web.tr/webkontrol/bin/diagnose.php https://ornek.com
+```
+
+Bu salt okunur komut PHP/cURL/TLS sürümlerini, yerel/yedek ve bağımsız DNS sonuçlarını ve gerçek bağlantı hatasını gösterir; veritabanını değiştirmez. Terminal yoksa aynı komutu geçici bir cron göreviyle `>> /home/KULLANICI/kontrol.mg.web.tr/webkontrol/var/diagnose.log 2>&1` yönlendirmesiyle çalıştırıp ardından bu tanı görevini kaldırabilirsiniz. Çalışma sunucusunda hata sürüyorsa bu çıktı, hosting sağlayıcısının DNS, güvenlik duvarı, IPv6 veya kendi sunucusuna dış IP üzerinden erişim (hairpin) sorununu ayırmasına yardımcı olur. PHP'nin web ve cron sürümleri farklı olabilir.
+
+Bu güncellemede sunucuya `src/app.php`, `public/index.php`, `public/style.css`, `bin/check.php` ve `bin/diagnose.php` dosyalarını yükleyin. Mevcut `var/` ve `.htaccess` korunmalıdır. Kayıtlı cron komutu aynı kalır.

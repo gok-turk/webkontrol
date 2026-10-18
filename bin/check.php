@@ -8,7 +8,7 @@ if(!$lock || !flock($lock,LOCK_EX|LOCK_NB))exit;
 // Bound each invocation; later runs continue the queue, including large imports.
 $deadline=microtime(true)+50;$failed=false;
 try {
-    $jobs=$db->query('SELECT id,next_check AS due,0 AS screenshot FROM sites WHERE next_check<='.time().' UNION ALL SELECT id,thumbnail_next AS due,1 AS screenshot FROM sites WHERE thumbnail_next<='.time().' ORDER BY due,id,screenshot')->fetchAll();
+    $jobs=$db->query('SELECT id,next_check AS due,0 AS screenshot,CASE WHEN next_check=0 THEN 0 ELSE 1 END AS priority FROM sites WHERE next_check<='.time().' UNION ALL SELECT id,thumbnail_next AS due,1 AS screenshot,2 AS priority FROM sites WHERE thumbnail_next<='.time().' ORDER BY priority,due,id,screenshot')->fetchAll();
     foreach($jobs as $job) {
         if(microtime(true)>$deadline)break;
         try {

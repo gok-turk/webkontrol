@@ -18,6 +18,12 @@ try {
     $r=importSites("www.site0.example\nfile:///etc/passwd\nhttps://new.example");verify($r['added']===1 && $r['duplicates']===1 && count($r['errors'])===1,'Tekrar ve hatalı satırlar ayrılır');
     verify(siteInput('EXAMPLE.COM')['url']==='https://example.com/','Şemasız domain normalize edilir');
     try{importSites(str_repeat("example.com\n",1001));throw new LogicException('Sınır uygulanmadı');}catch(InvalidArgumentException $e){echo 'PASS Toplu ekleme sınırı'.PHP_EOL;}
+    $db->exec("UPDATE sites SET next_check=9999999999; UPDATE sites SET state='down' WHERE id IN (1,2)");
+    verify(queueChecks(true)===2,'Yalnızca hatalı siteler kontrol kuyruğuna alınır');
+    verify((int)$db->query('SELECT COUNT(*) FROM sites WHERE next_check=0')->fetchColumn()===2,'Sağlıklı ve bekleyen sitelerin programı korunur');
+    $db->exec("UPDATE sites SET state='up' WHERE id=2");
+    verify(queueChecks(false)===102,'Tüm siteler filtrelerden bağımsız kuyruğa alınır');
+    verify((int)$db->query('SELECT COUNT(*) FROM sites WHERE next_check<>0')->fetchColumn()===0,'Toplu kontrol tüm sitelerin zamanını öne alır');
     $endpoint=getenv('MONITOR_SCREENSHOT_ENDPOINT');
     if($endpoint) {
         $db->exec("INSERT INTO sites(name,url,interval_seconds) VALUES('Görsel','https://1.1.1.1/',86400)");$id=(int)$db->lastInsertId();

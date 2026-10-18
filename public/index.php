@@ -20,7 +20,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
             if(!hash_equals($password,(string)($_POST['password']??''))) {usleep(500000);throw new RuntimeException('Parola hatalı.');}
             session_regenerate_id(true);$_SESSION['auth']=hash('sha256',$password);
         } elseif (isset($_SESSION['auth']) && hash_equals(hash('sha256',$password),$_SESSION['auth'])) {
-            if ($action==='filter') {
+            if ($action==='queue_all' || $action==='queue_down') {
+                $count=queueChecks($action==='queue_down');
+                $_SESSION['notice']=$count.' site kontrol kuyruğuna alındı. Cron açıkken sırayla kontrol edilecek; sonuçlar için sayfayı yenileyin.';
+            }
+            elseif ($action==='filter') {
                 $filter=(string)($_POST['filter']??'');
                 if(!in_array($filter,['all','up','down'],true))throw new InvalidArgumentException('Geçersiz filtre.');
                 $_SESSION['site_filter']=$filter;
@@ -64,7 +68,7 @@ $notice=$_SESSION['notice']??null;unset($_SESSION['notice']);
 function csrf(): void {echo '<input type="hidden" name="csrf" value="'.e($_SESSION['csrf']).'">';}
 function dateLabel(?int $t): string {return $t?gmdate('d.m.Y H:i:s',$t).' UTC':'Henüz kontrol edilmedi';}
 ?>
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>WebKontrol · Site izleme</title><link rel="stylesheet" href="style.css?v=4"></head><body><main>
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>WebKontrol · Site izleme</title><link rel="stylesheet" href="style.css?v=5"></head><body><main>
 <header><div><span class="eyebrow">SİTELERİNİZİN NABZI</span><h1>WebKontrol<span>●</span></h1><p>Sitelerinizi tek yerden takip edin.</p></div><?php if($auth):?><form method="post"><?php csrf();?><button name="action" value="logout" class="secondary">Çıkış yap</button></form><?php endif;?></header>
 <?php if($notice):?><p class="notice" role="status"><?=e($notice)?></p><?php endif;?>
 <?php if($error):?><p class="error" role="alert"><?=e($error)?></p><?php endif;?>
@@ -73,11 +77,13 @@ function dateLabel(?int $t): string {return $t?gmdate('d.m.Y H:i:s',$t).' UTC':'
 $sites=db()->query("SELECT s.*, (SELECT ROUND(100.0*SUM(state='up')/COUNT(*),2) FROM checks c WHERE c.site_id=s.id AND c.checked_at>=strftime('%s','now')-2592000) AS uptime FROM sites s ORDER BY s.id DESC")->fetchAll();
 $up=count(array_filter($sites,fn($s)=>$s['state']==='up'));$down=count(array_filter($sites,fn($s)=>$s['state']==='down'));
 $visibleSites=$filter==='all'?$sites:array_values(array_filter($sites,fn($s)=>$s['state']===$filter));
+$queued=(int)db()->query('SELECT COUNT(*) FROM sites WHERE next_check=0')->fetchColumn();
 $filterLabel=match($filter){'up'=>'Erişilebilir','down'=>'Kesinti / hata',default=>'Tüm siteler'};
 ?><section class="stats" aria-label="Site durumu filtreleri">
 <?php foreach(['all'=>['İzlenen site',count($sites),''],'up'=>['Erişilebilir',$up,'green'],'down'=>['Kesinti / hata',$down,'red']] as $key=>[$label,$count,$color]):?>
 <form method="post"><?php csrf();?><input type="hidden" name="action" value="filter"><button type="submit" name="filter" value="<?=e($key)?>" class="stat-filter" aria-pressed="<?=$filter===$key?'true':'false'?>" aria-label="<?=e($label)?>: <?=e($count)?> siteyi göster"><span><?=e($label)?></span><strong class="<?=e($color)?>"><?=e($count)?></strong></button></form>
 <?php endforeach;?></section>
+<section class="batch-controls" aria-label="Toplu kontrol"><div><h2>Toplu kontrol</h2><p class="hint"><?= $queued ?> site kontrol bekliyor · İşlemler cron ile arka planda yürütülür.</p></div><form method="post"><?php csrf();?><button name="action" value="queue_all"<?=!$sites?' disabled':''?>>Tümünü kontrol et</button><button name="action" value="queue_down" class="secondary"<?=$down===0?' disabled':''?>>Kesinti olanları kontrol et</button></form><a href="./#sites" class="refresh-results">Sonuçları yenile</a></section>
 <section class="add"><h2>Site ekle</h2><form method="post" class="grid single-add"><?php csrf();?><input type="hidden" name="action" value="add"><label>Domain veya URL<input name="url" placeholder="www.ornek.com veya https://ornek.com" required></label><label>Kontrol aralığı (dakika)<input type="number" name="minutes" value="1440" min="1" max="1440" required></label><button>Site ekle</button></form>
 <details class="bulk"<?= $error && ($_POST['action']??'')==='bulk' ? ' open' : '' ?>><summary>Toplu domain ekle</summary><form method="post"><?php csrf();?><input type="hidden" name="action" value="bulk"><label>Her satıra bir domain veya URL (en fazla 1000)<textarea name="urls" rows="8" placeholder="ornek.com&#10;www.ikincisite.com&#10;https://ucuncusite.com" required><?=e($_POST['urls']??'')?></textarea></label><input type="hidden" name="minutes" value="1440"><button>Toplu ekle · 24 saat</button></form></details>
 <p class="hint">Site adı domain üzerinden, başındaki www. kaldırılarak oluşturulur. Varsayılan kontrol aralığı 24 saattir. Kontroller ve otomatik küçük resimler için cron gereklidir. Küçük resim hizmeti: thum.io; site adresleri bu servise gönderilir.</p></section>
