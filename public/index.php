@@ -1,0 +1,57 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/../src/app.php';
+ini_set('session.use_strict_mode','1');
+session_set_cookie_params(['httponly'=>true,'samesite'=>'Strict','secure'=>!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS']!=='off']);
+$sessions=(getenv('MONITOR_DATA_DIR') ?: ROOT.'/var').'/sessions';
+if(!is_dir($sessions) && !mkdir($sessions,0700,true))throw new RuntimeException('Oturum dizini oluşturulamadı.');
+session_save_path($sessions);
+session_start();
+header('X-Content-Type-Options: nosniff');header('X-Frame-Options: DENY');header('Referrer-Policy: no-referrer');
+header("Content-Security-Policy: default-src 'self'; img-src 'self' https:; style-src 'self'; form-action 'self'; frame-ancestors 'none'");
+$password=getenv('MONITOR_PASSWORD');
+if (!$password) {http_response_code(503);echo 'Başlatmadan önce MONITOR_PASSWORD ortam değişkenini tanımlayın.';exit;}
+$_SESSION['csrf'] ??= bin2hex(random_bytes(32)); $error=null;
+if ($_SERVER['REQUEST_METHOD']==='POST') {
+    if (!hash_equals($_SESSION['csrf'],(string)($_POST['csrf']??''))) {http_response_code(403);exit('Geçersiz oturum.');}
+    try {
+        $action=$_POST['action']??'';
+        if ($action==='login') {
+            if(!hash_equals($password,(string)($_POST['password']??''))) {usleep(500000);throw new RuntimeException('Parola hatalı.');}
+            session_regenerate_id(true);$_SESSION['auth']=hash('sha256',$password);
+        } elseif (isset($_SESSION['auth']) && hash_equals(hash('sha256',$password),$_SESSION['auth'])) {
+            if ($action==='logout') {$_SESSION=[];session_destroy();}
+            elseif ($action==='add') {
+                $url=validateUrl(trim((string)($_POST['url']??'')));$name=trim((string)($_POST['name']??''));
+                $minutes=filter_var($_POST['minutes']??'',FILTER_VALIDATE_INT);
+                if(!$name || strlen($name)>120 || !$minutes || $minutes<1 || $minutes>1440)throw new InvalidArgumentException('Ad ve 1–1440 dakika aralığı gerekli.');
+                $thumb=trim((string)($_POST['thumbnail']??''));if($thumb!=='')validateUrl($thumb);
+                db()->prepare('INSERT INTO sites(name,url,interval_seconds,thumbnail) VALUES(?,?,?,?)')->execute([$name,$url,$minutes*60,$thumb?:null]);
+            } elseif ($action==='interval') {
+                $minutes=filter_var($_POST['minutes']??'',FILTER_VALIDATE_INT);
+                if(!$minutes || $minutes<1 || $minutes>1440)throw new InvalidArgumentException('Aralık 1–1440 dakika olmalı.');
+                db()->prepare('UPDATE sites SET interval_seconds=?,next_check=0 WHERE id=?')->execute([$minutes*60,(int)($_POST['id']??0)]);
+            } elseif ($action==='delete') db()->prepare('DELETE FROM sites WHERE id=?')->execute([(int)($_POST['id']??0)]);
+            elseif ($action==='check') checkSite((int)($_POST['id']??0),true);
+        } else throw new RuntimeException('Oturum açın.');
+        header('Location: ./');exit;
+    } catch(Throwable $ex) {$error=$ex instanceof PDOException?'Kayıt işlemi başarısız. Bu adres zaten eklenmiş olabilir.':$ex->getMessage();}
+}
+$auth=isset($_SESSION['auth']) && hash_equals(hash('sha256',$password),$_SESSION['auth']);
+function csrf(): void {echo '<input type="hidden" name="csrf" value="'.e($_SESSION['csrf']).'">';}
+function dateLabel(?int $t): string {return $t?gmdate('d.m.Y H:i:s',$t).' UTC':'Henüz kontrol edilmedi';}
+?>
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>WebKontrol · Site izleme</title><link rel="stylesheet" href="style.css"></head><body><main>
+<header><div><span class="eyebrow">SİTELERİNİZİN NABZI</span><h1>WebKontrol<span>●</span></h1><p>Sitelerinizi tek yerden takip edin.</p></div><?php if($auth):?><form method="post"><?php csrf();?><button name="action" value="logout" class="secondary">Çıkış yap</button></form><?php endif;?></header>
+<?php if($error):?><p class="error" role="alert"><?=e($error)?></p><?php endif;?>
+<?php if(!$auth):?><section class="login"><h2>Panelinize giriş yapın</h2><form method="post"><?php csrf();?><label>Yönetici parolası<input type="password" name="password" required autocomplete="current-password"></label><button name="action" value="login">Giriş yap</button></form></section>
+<?php else:
+$sites=db()->query("SELECT s.*, (SELECT ROUND(100.0*SUM(state='up')/COUNT(*),2) FROM checks c WHERE c.site_id=s.id AND c.checked_at>=strftime('%s','now')-2592000) AS uptime FROM sites s ORDER BY s.id DESC")->fetchAll();
+$up=count(array_filter($sites,fn($s)=>$s['state']==='up'));$down=count(array_filter($sites,fn($s)=>$s['state']==='down'));
+?><section class="stats"><div><span>İzlenen site</span><strong><?=count($sites)?></strong></div><div><span>Erişilebilir</span><strong class="green"><?=$up?></strong></div><div><span>Kesinti / hata</span><strong class="red"><?=$down?></strong></div></section>
+<section class="add"><h2>Yeni site ekle</h2><form method="post" class="grid"><?php csrf();?><input type="hidden" name="action" value="add"><label>Site adı<input name="name" placeholder="Şirket sitem" maxlength="120" required></label><label>Site adresi<input type="url" name="url" placeholder="https://ornek.com" required></label><label>Kontrol aralığı (dakika)<input type="number" name="minutes" value="5" min="1" max="1440" required></label><label>Küçük resim URL’si (isteğe bağlı)<input type="url" name="thumbnail" placeholder="https://…/ekran-goruntusu.png"></label><button>Site ekle</button></form><p class="hint">Otomatik kontroller için cron çalışmalıdır. Küçük resim alanına kendi ekran görüntünüzün veya güvendiğiniz bir ekran görüntüsü servisinin resim adresini ekleyebilirsiniz.</p></section>
+<div class="section-title"><h2>Siteleriniz</h2><span>Son 30 gün · Kontrol örneklerine göre erişilebilirlik</span></div>
+<?php if(!$sites):?><section class="empty"><h2>İlk sitenizi ekleyin</h2><p>Kontrol sonuçları ve erişilebilirlik geçmişi burada görünecek.</p></section><?php endif;?>
+<?php foreach($sites as $s):?><article class="site"><div class="preview"><?php if($s['thumbnail']):?><img src="<?=e($s['thumbnail'])?>" alt="<?=e($s['name'])?> ekran görüntüsü" loading="lazy"><?php else:?><span>WWW</span><?php endif;?></div><div class="details"><div class="site-title"><h3><a href="<?=e($s['url'])?>" target="_blank" rel="noopener noreferrer"><?=e($s['name'])?></a></h3><span class="badge <?=e($s['state']??'pending')?>"><?=match($s['state']){'up'=>'Erişilebilir','down'=>'Kesinti / hata',default=>'Bekliyor'}?></span></div><p class="url"><?=e($s['url'])?></p><div class="metrics"><span>Erişilebilirlik <b><?= $s['uptime']!==null?e($s['uptime']).'%':'—'?></b></span><span>Yanıt <b><?=$s['latency']!==null?e($s['latency']).' ms':'—'?></b></span><span>HTTP <b><?=e($s['status']?:'—')?></b></span><span>Aralık <b><?=e($s['interval_seconds']/60)?> dk</b></span></div><p class="hint">Son kontrol: <?=e(dateLabel($s['checked_at']?(int)$s['checked_at']:null))?></p><?php if($s['error']):?><p class="error"><?=e($s['error'])?></p><?php endif;?><details><summary>Son 20 kontrol</summary><div class="history"><?php $q=db()->prepare('SELECT * FROM checks WHERE site_id=? ORDER BY id DESC LIMIT 20');$q->execute([$s['id']]);foreach($q as $c):?><p><?=e(dateLabel((int)$c['checked_at']))?> · <?=e($c['state']==='up'?'Açık':'Kesinti / hata')?> · HTTP <?=e($c['status'])?> · <?=e($c['latency'])?> ms <?=e($c['error'])?></p><?php endforeach;?></div></details></div><div class="actions"><form method="post"><?php csrf();?><input type="hidden" name="id" value="<?=e($s['id'])?>"><label>Aralık (dk)<input type="number" name="minutes" min="1" max="1440" value="<?=e($s['interval_seconds']/60)?>" required></label><button name="action" value="interval" class="secondary">Aralığı kaydet</button></form><form method="post"><?php csrf();?><input type="hidden" name="id" value="<?=e($s['id'])?>"><button name="action" value="check">Şimdi kontrol et</button></form><form method="post"><?php csrf();?><input type="hidden" name="id" value="<?=e($s['id'])?>"><button class="secondary danger" name="action" value="delete">Siteyi sil</button></form></div></article><?php endforeach;?>
+<footer>WebKontrol · Sonuçlar bu sunucunun erişimini gösterir. HTTP 200–399 açık kabul edilir. Geçmiş 90 gün saklanır.</footer>
+<?php endif;?></main></body></html>
