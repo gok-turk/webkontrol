@@ -14,7 +14,7 @@ try {
     try{acceptBrowserResult($result+['screenshot'=>'invalid']);throw new LogicException('Geçersiz resim kabul edildi');}catch(InvalidArgumentException $e){echo 'PASS Geçersiz resim reddedilir'.PHP_EOL;}
     acceptBrowserResult($result);
     $row=db()->query('SELECT * FROM sites WHERE id=1')->fetch();verifyBrowser($row['state']==='up' && $row['check_source']==='browser' && (int)$row['next_check']-(int)$row['checked_at']===86400,'Tarayıcı sonucu ve 24 saatlik program kaydedilir');
-    try{acceptBrowserResult($result);throw new LogicException('Tekrar kabul edildi');}catch(DomainException $e){echo 'PASS Tekrarlanan sonuç reddedilir'.PHP_EOL;}
+    acceptBrowserResult($result);verifyBrowser((int)db()->query('SELECT COUNT(*) FROM checks')->fetchColumn()===1,'Aynı sonuç bağlantı hatası sonrası tekrar gönderildiğinde iki kez kaydedilmez');
     db()->exec('UPDATE sites SET lease_until=0 WHERE id=2');$renewed=claimBrowserJobs()[0];
     try{acceptBrowserResult(['id'=>2,'job'=>$jobs[1]['job'],'state'=>'down','status'=>0,'latency'=>10,'error'=>'Eski iş']);throw new LogicException('Eski iş kabul edildi');}catch(DomainException $e){echo 'PASS Eski iş yeni işin sonucunu ezemez'.PHP_EOL;}
     acceptBrowserResult(['id'=>2,'job'=>$renewed['job'],'state'=>'down','status'=>503,'latency'=>10,'error'=>'HTTP 503']);

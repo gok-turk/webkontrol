@@ -32,7 +32,7 @@ Chromium HTTPS sertifikasını doğrulayarak sayfayı açar; DOM yüklenmesi, g�
 
 ### API ve tarayıcı güvenliği
 
-`public/browser-api.php` sadece anahtarlı POST isteklerini kabul eder; iş nonce'ı ve süresi denetlenir. Eski/tekrar sonuçlar reddedilir. Anahtar yalnızca panel API'sine gönderilir; ziyaret edilen sitelere veya Chromium işlem ortamına aktarılmaz. Runner'daki HTTP/HTTPS proxy her bağlantıda DNS'i çözümleyip genel IP'ye sabitler; özel/yerel ağlar, metadata adresleri ve 80/443 dışındaki portlar engellenir. Chromium bağlamları siteler arasında ayrıdır; TLS doğrulaması kapatılmaz.
+`public/browser-api.php` sadece anahtarlı POST isteklerini kabul eder; iş nonce'ı ve süresi denetlenir. Eski iş sonuçları reddedilir; aynı işin başarıyla kaydedilmiş sonucu tekrar gelirse yeni kayıt oluşturmadan onaylanır. Anahtar yalnızca panel API'sine gönderilir; ziyaret edilen sitelere veya Chromium işlem ortamına aktarılmaz. Runner'daki HTTP/HTTPS proxy her bağlantıda DNS'i çözümleyip genel IP'ye sabitler; özel/yerel ağlar, metadata adresleri ve 80/443 dışındaki portlar engellenir. Chromium bağlamları siteler arasında ayrıdır; TLS doğrulaması kapatılmaz.
 
 ### Testler
 
@@ -148,3 +148,11 @@ cPanel Terminal veya SSH üzerinden sorunlu adres için tanı komutu:
 Bu salt okunur komut PHP/cURL/TLS sürümlerini, yerel/yedek ve bağımsız DNS sonuçlarını ve gerçek bağlantı hatasını gösterir; veritabanını değiştirmez. Terminal yoksa aynı komutu geçici bir cron göreviyle `>> /home/KULLANICI/kontrol.mg.web.tr/webkontrol/var/diagnose.log 2>&1` yönlendirmesiyle çalıştırıp ardından bu tanı görevini kaldırabilirsiniz. Çalışma sunucusunda hata sürüyorsa bu çıktı, hosting sağlayıcısının DNS, güvenlik duvarı, IPv6 veya kendi sunucusuna dış IP üzerinden erişim (hairpin) sorununu ayırmasına yardımcı olur. PHP'nin web ve cron sürümleri farklı olabilir.
 
 Bu güncellemede sunucuya `src/app.php`, `public/index.php`, `public/style.css`, `bin/check.php` ve `bin/diagnose.php` dosyalarını yükleyin. Mevcut `var/` ve `.htaccess` korunmalıdır. Kayıtlı cron komutu aynı kalır.
+
+## GitHub → panel bağlantı zaman aşımı
+
+`UND_ERR_CONNECT_TIMEOUT` veya sonuç gönderiminde `fetch failed` hedef sitenin kapalı olduğunu göstermez; GitHub runner'ı panel API'sine ulaşamamıştır. Güncel worker IPv4 ve TLS doğrulamalı HTTPS bağlantısı kullanır, TLS bağlantısını yeniden kullanır ve panel isteklerini saniyede en fazla bir tane olacak şekilde seri gönderir. Geçici ağ hataları ve HTTP 429/500/502/503/504 yanıtları en fazla dört kez denenir; kimlik doğrulama ve sertifika hataları bu şekilde gizlenmez.
+
+Kaydedilmiş bir sonucun yanıtı bağlantıda kaybolursa aynı nonce ile tekrar gönderim geçmişte ikinci kayıt oluşturmaz. Bir yükleme başarısız olduğunda diğer atanmış işler tamamlanmaya çalışılır; panel sürekli erişilemezse yeni iş alınmaz. Kaydedilemeyen sonuçlar siteyi otomatik olarak kapalı yapmaz; önceki durum korunur ve 10 dakikalık iş kilidi dolunca sonraki workflow işi yeniden alır. Çalışma özetinde kaydedilen ve tamamlanamayan sonuç sayıları görünür. Kalıcı hosting firewall/IP veya bağlantı limiti engelini tekrar denemeler aşamaz; bu durumda hosting panel alan adının 443 portuna GitHub runner erişimini incelemelidir.
+
+Bu düzeltmeyi uygulamak için cPanel'de **`src/app.php` ve `src/browser.php`** dosyalarını yenileyin. Anahtar ve mevcut ayarlar değişmez. GitHub'da **Actions → Browser monitoring → Run workflow → main** ile yeni çalışma başlatın; eski çalışmadaki **Re-run jobs** eski commit'i kullanabileceği için güncel kodu test etmez.

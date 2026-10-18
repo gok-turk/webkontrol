@@ -39,10 +39,14 @@ function acceptBrowserResult(array $data): void {
     $db=db();$db->beginTransaction();$tmp=null;
     try {
         $q=$db->prepare('SELECT * FROM sites WHERE id=? AND browser_job=? AND lease_until>?');$q->execute([$id,$job,time()]);$site=$q->fetch();
-        if(!$site)throw new DomainException('İş tamamlanmış, süresi dolmuş veya silinmiş.');
+        if(!$site) {
+            $q=$db->prepare('SELECT browser_last_job FROM sites WHERE id=?');$q->execute([$id]);
+            if($q->fetchColumn()===$job){$db->commit();return;}
+            throw new DomainException('İş tamamlanmış, süresi dolmuş veya silinmiş.');
+        }
         $at=time();$next=$at+($state==='down'?min(300,(int)$site['interval_seconds']):(int)$site['interval_seconds']);
         $db->prepare('INSERT INTO checks(site_id,checked_at,state,status,latency,error) VALUES(?,?,?,?,?,?)')->execute([$id,$at,$state,$status,$latency,$error]);
-        $db->prepare("UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0,browser_job=NULL,check_source='browser' WHERE id=?")->execute([$at,$state,$status,$latency,$error,$next,$id]);
+        $db->prepare("UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0,browser_job=NULL,browser_last_job=?,check_source='browser' WHERE id=?")->execute([$at,$state,$status,$latency,$error,$next,$job,$id]);
         if($image!==null) {
             $dir=dirname(thumbnailFile($id));if(!is_dir($dir) && !mkdir($dir,0700,true))throw new RuntimeException('Resim dizini oluşturulamadı.');
             $tmp=tempnam($dir,'browser-');if(!$tmp || file_put_contents($tmp,$image)===false || !rename($tmp,thumbnailFile($id)))throw new RuntimeException('Resim kaydedilemedi.');

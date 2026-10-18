@@ -10,9 +10,9 @@ function db(): PDO {
     $db->exec('PRAGMA busy_timeout=10000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
     $db->exec('CREATE TABLE IF NOT EXISTS sites (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, interval_seconds INTEGER NOT NULL, next_check INTEGER NOT NULL DEFAULT 0, checked_at INTEGER, state TEXT, status INTEGER, latency INTEGER, error TEXT, thumbnail TEXT, lease_until INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS checks (id INTEGER PRIMARY KEY, site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE, checked_at INTEGER NOT NULL, state TEXT NOT NULL, status INTEGER, latency INTEGER NOT NULL, error TEXT); CREATE INDEX IF NOT EXISTS checks_site_time ON checks(site_id, checked_at);');
     $columns=array_column($db->query('PRAGMA table_info(sites)')->fetchAll(),'name');
-    foreach (['thumbnail_at','thumbnail_next','thumbnail_lease','thumbnail_error','browser_job','check_source'] as $column) {
+    foreach (['thumbnail_at','thumbnail_next','thumbnail_lease','thumbnail_error','browser_job','browser_last_job','check_source'] as $column) {
         if (!in_array($column,$columns,true)) {
-            try {$db->exec('ALTER TABLE sites ADD COLUMN '.$column.(in_array($column,['thumbnail_error','browser_job','check_source'],true)?' TEXT':' INTEGER NOT NULL DEFAULT 0'));}
+            try {$db->exec('ALTER TABLE sites ADD COLUMN '.$column.(in_array($column,['thumbnail_error','browser_job','browser_last_job','check_source'],true)?' TEXT':' INTEGER NOT NULL DEFAULT 0'));}
             catch(PDOException $e) {if(!in_array($column,array_column($db->query('PRAGMA table_info(sites)')->fetchAll(),'name'),true))throw $e;}
         }
     }
