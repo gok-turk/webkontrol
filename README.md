@@ -26,7 +26,7 @@ Bu modda mevcut cPanel cron'u sessizce çıkar; yerel cURL sonuçları tarayıc�
 
 ### Başarı kriteri ve resimler
 
-Chromium HTTPS sertifikasını doğrulayarak sayfayı açar; DOM yüklenmesi, görüntülenebilir içerik ve son ana belge HTTP 200–399 sonucu aranır. Taşıma veya boş sayfa hatası bir kez yeni oturumda tekrar denenir. HTTP 4xx/5xx sonuçları başarılı sayılmaz. WAF, giriş duvarı veya bot engeli tarayıcı kontrolünü de engelleyebilir. Sayfanın açılması ödeme, form ve diğer tüm işlevlerin çalıştığını kanıtlamaz.
+Chromium HTTPS sertifikasını doğrulayarak sayfayı açar; Ana belgenin yanıtı alındıktan sonra görüntülenebilir içerik ve son ana belge HTTP 200–399 sonucu aranır; DOMContentLoaded olayının bütün scriptleri beklemesi başarı şartı değildir. Taşıma veya boş sayfa hatası bir kez yeni oturumda tekrar denenir. HTTP 4xx/5xx sonuçları başarılı sayılmaz. WAF, giriş duvarı veya bot engeli tarayıcı kontrolünü de engelleyebilir. Sayfanın açılması ödeme, form ve diğer tüm işlevlerin çalıştığını kanıtlamaz.
 
 İlk tarayıcı kontrolünde önceki thum.io resminin yerine yeni JPEG alınır; sonra resimler en fazla 24 saatte bir yenilenir. Daha kısa aralıklı durum kontrollerinde resim tekrar alınmayabilir. Resim hatası erişilebilirlik sonucunu değiştirmez; sonraki kontrol sırasında tekrar denenir. Ziyaretler GitHub IP'sinden yapılır; kayıtlı domainler ve sayfa içeriği GitHub üzerinde işlenir. Resimler ve sonuçlar cPanel'e geri gönderilir; public Actions artifact'ı olarak yayımlanmaz.
 
@@ -164,3 +164,9 @@ Bir çalışma bütün listeyi bitirmek zorunda değildir: `Completed browser ch
 Panelde **Tarayıcı kontrolü: X / toplam** sayacı hangi sitelere gerçekten Chromium sonucu geldiğini gösterir. Henüz tarayıcı sonucu gelmeyen cPanel kayıtları **Tarayıcı sonucu bekleniyor** diye işaretlenir; eski hata ayrıntısı kapalı bir açıklamada korunur. Özet durum sayıları son kayıtları içerir ve yeni sonuç geldikçe değişir. Kuyruk manuel bekleyen işleri, aralarında eski hatalı kayıtları ve paneldeki en yeni siteleri önceliklendirir. İlerlemeyi görmek için sayfayı yenileyin; **Tümünü kontrol et** düğmesine her yenilemede yeniden basmayın.
 
 Bu görünüm ve öncelik güncellemesi için `src/browser.php`, `public/index.php`, `public/style.css` dosyalarını cPanel'de yenileyin. `var/` ve anahtar korunur.
+
+## Sayfa görünürken DOMContentLoaded zaman aşımı
+
+Bazı sitelerde engellenen/geciken bir script, içerik ekranda görünse bile `DOMContentLoaded` olayını geciktirir. Güncel Chromium kontrolü önce ana belgenin HTTP yanıtını (`commit`, 20 saniye) bekler, ardından en fazla 20 saniye içinde görünür metin veya görsel içerik arar. Görünür sayfayı yalnızca tamamlanmayan script yüzünden kesinti olarak işaretlemez. Sayfa boş kalırsa veya son ana belge 4xx/5xx verirse hata sonucu korunur. JavaScript yönlendirmesinden sonraki ana belge yanıtı da izlenir. Ekran görüntüsü hatası ayrı kaydedilir.
+
+Proxy tüneli kurulamadığında DNS (ENOTFOUND/EAI_AGAIN), bağlantı reddi veya TCP zaman aşımı bilgisi varsa sonuç hata metnine eklenir. Bu değişiklikler sadece GitHub tarafındadır; cPanel dosyası yüklemeden güncel `main` ile yeni **Run workflow** başlatın.

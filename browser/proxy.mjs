@@ -23,9 +23,14 @@ async function connectPublic(host,port,resolve) {
 }
 // Resolve, validate and pin the TCP socket, including all redirects and subresources.
 export async function createProxy({resolve=publicLookup}={}) {
- const sockets=new Set();
+ const sockets=new Set(),failures=new Map();
+ function recordFailure(host,error){
+  if(!host)return;
+  const reason=['ENOTFOUND','EAI_AGAIN'].includes(error.code)?'DNS çözümlemesi başarısız ('+error.code+').':(error.code?error.code+': ':'')+error.message;
+  failures.set(host,reason.slice(0,500));if(failures.size>512)failures.delete(failures.keys().next().value);
+ }
  const server=http.createServer(async(req,res)=>{
-  let upstream;
+  let upstream,host;
   try {
    const u=new URL(req.url);if(u.protocol!=='http:' || u.username || u.password)throw Error('Invalid HTTP URL');
    const socket=await connectPublic(u.hostname,Number(u.port||80),resolve);
@@ -37,17 +42,18 @@ export async function createProxy({resolve=publicLookup}={}) {
   }catch{res.writeHead(502);res.end('Upstream connection failed or private address blocked');}
  });
  server.on('connect',async(req,client,head)=>{
-  let upstream;
+  let upstream,host;
   client.on('error',()=>upstream?.destroy());client.on('close',()=>upstream?.destroy());
   try {
    const u=new URL('http://'+req.url);if(u.username || u.password || u.pathname!=='/' || u.search || u.hash)throw Error('Invalid tunnel');
-   upstream=await connectPublic(u.hostname.replace(/^\[|\]$/g,''),Number(u.port||80),resolve);
+   host=u.hostname.replace(/^\[|\]$/g,'');
+   upstream=await connectPublic(host,Number(u.port||80),resolve);failures.delete(host);
    if(client.destroyed){upstream.destroy();return;}
    upstream.on('error',()=>client.destroy());upstream.on('close',()=>client.destroy());
    client.write('HTTP/1.1 200 Connection Established\r\n\r\n');if(head.length)upstream.write(head);client.pipe(upstream);upstream.pipe(client);
-  }catch{client.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');}
+  }catch(e){recordFailure(host,e);client.end('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');}
  });
  server.on('connection',s=>{sockets.add(s);s.on('error',()=>{});s.on('close',()=>sockets.delete(s));});
  await new Promise(res=>server.listen(0,'127.0.0.1',res));
- return {url:'http://127.0.0.1:'+server.address().port,close:async()=>{for(const s of sockets)s.destroy();await new Promise(res=>server.close(res));}};
+ return {url:'http://127.0.0.1:'+server.address().port,failureFor:host=>failures.get(host),close:async()=>{for(const s of sockets)s.destroy();await new Promise(res=>server.close(res));}};
 }

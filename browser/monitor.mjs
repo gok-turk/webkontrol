@@ -18,7 +18,12 @@ try {
    while(cursor<jobs.length){
     const job=jobs[cursor++];
     try {
-     const result=await browserCheck(browser,job);await api.call('result',result);checked++;
+     const result=await browserCheck(browser,job);
+     if(result.state==='down' && /ERR_TUNNEL_CONNECTION_FAILED/.test(result.error??'')) {
+      const reason=proxy.failureFor(new URL(job.url).hostname);
+      if(reason)result.error=('Tarayıcı bağlantısı kurulamadı: '+reason+' '+result.error).slice(0,1800);
+     }
+     await api.call('result',result);checked++;
      console.log('Saved browser result for site #'+job.id);
     }catch(e){failed++;console.error('Site #'+job.id+': '+e.message);}
    }
