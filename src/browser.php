@@ -11,15 +11,15 @@ function enableBrowser(): void {
         chmod($file,0600);fwrite($handle,bin2hex(random_bytes(32)));fclose($handle);
     }
     if(file_put_contents(dataDir().'/browser-enabled','1',LOCK_EX)===false)throw new RuntimeException('Tarayıcı modu etkinleştirilemedi.');
-    queueChecks();
+    db()->prepare('UPDATE sites SET next_check=0 WHERE manual_until<=?')->execute([time()]);
 }
 function claimBrowserJobs(int $limit=6): array {
     $db=db();$now=time();$jobs=[];
-    $rows=$db->query('SELECT * FROM sites WHERE next_check<='.$now.' AND lease_until<='.$now.' ORDER BY CASE WHEN next_check=0 THEN 0 ELSE 1 END,CASE WHEN state=\'down\' THEN 0 ELSE 1 END,next_check,id DESC LIMIT '.max(1,min(6,$limit)))->fetchAll();
+    $rows=$db->query('SELECT * FROM sites WHERE next_check<='.$now.' AND manual_until<='.$now.' AND lease_until<='.$now.' ORDER BY CASE WHEN next_check=0 THEN 0 ELSE 1 END,CASE WHEN state=\'down\' THEN 0 ELSE 1 END,next_check,id DESC LIMIT '.max(1,min(6,$limit)))->fetchAll();
     foreach($rows as $site) {
         $nonce=bin2hex(random_bytes(24));
-        $q=$db->prepare('UPDATE sites SET lease_until=?,browser_job=? WHERE id=? AND lease_until<=? AND next_check<=?');
-        $q->execute([$now+600,$nonce,$site['id'],$now,$now]);
+        $q=$db->prepare('UPDATE sites SET lease_until=?,browser_job=? WHERE id=? AND lease_until<=? AND next_check<=? AND manual_until<=?');
+        $q->execute([$now+600,$nonce,$site['id'],$now,$now,$now]);
         if($q->rowCount())$jobs[]=['id'=>(int)$site['id'],'url'=>$site['url'],'job'=>$nonce,'screenshot'=>($site['check_source']??'server')!=='browser' || !empty($site['thumbnail_error']) || (int)$site['thumbnail_at']<=$now-86400 || !is_file(thumbnailFile((int)$site['id']))];
     }
     return $jobs;

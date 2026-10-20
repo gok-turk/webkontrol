@@ -38,6 +38,7 @@ WebKontrol'e domainlerinizi ekleyebilir, kontrol aralıklarını belirleyebilir,
 - Tekrar URL'leri atlama ve hatalı satırları raporlama.
 - Site başına **1–1440 dakika** kontrol aralığı; yeni kayıtlarda varsayılan **24 saat**.
 - Site bazında kontrol, tümünü veya yalnızca hatalı kayıtları yeniden kontrol kuyruğuna alma.
+- Otomatik kontrolün yanlış hata verdiği siteler için 24 saatlik, açıkça etiketlenen manuel doğrulama.
 - Erişilebilir / kesinti-hata / tüm siteler filtreleri.
 - Liste, ikili grid ve üçlü grid görünümü; dar ekranlarda otomatik sütun azaltma.
 - Görünüm ve filtre seçimini oturum boyunca hatırlama.
@@ -328,6 +329,22 @@ https://example.org/
 
 Kuyrukta manuel istenen işler, bunların arasında hatalı siteler ve panelde üstte gösterilen yeni kayıtlar önceliklendirilir.
 
+### Manuel doğrulama: açık olarak işaretleme
+
+Bir siteyi kendiniz tarayıcıda açıp erişilebilir olduğunu doğruladığınız halde otomatik kontrol hata veriyorsa, karttaki **Manuel doğruladım: açık** düğmesini kullanabilirsiniz.
+
+- Site **24 saat** boyunca etkin manuel doğrulama ile erişilebilir gösterilir; sayaçlar ve filtreler buna göre değişir.
+- Kartta **Manuel doğrulandı: açık**, doğrulama zamanı ve bitiş zamanı görünür. Bu, otomatik Chromium kontrolü gibi gösterilmez.
+- Otomatik durum, hata, kontrol geçmişi ve erişilebilirlik yüzdesi değiştirilmez; manuel işlem sahte bir HTTP 200 veya başarılı otomatik kontrol örneği üretmez. Karttaki ölçümler önceki otomatik kontrole aittir.
+- Sonraki otomatik kontrol 24 saat sonrasına planlanır. Bu süre boyunca yeni bir otomatik durum kontrolü yapılmaz; sitenin arada değişen durumunu bu manuel işaret gizleyebilir.
+- Önceden başlamış bir tarayıcı işi manuel kararı ezemez.
+- **Kesinti olanları kontrol et**, etkin manuel doğrulamaları atlar.
+- **Şimdi kontrol et** ilgili sitenin; **Tümünü kontrol et** bütün sitelerin manuel doğrulamasını erken kaldırır ve yeniden kontrol ister.
+- **Manuel doğrulamayı kaldır** seçeneği de bu kaydı otomatik kontrol kuyruğuna döndürür.
+- Süre bitince ilk uygun otomatik çalışmada yeniden kontrol edilir. Yeni sonuç gelene kadar önceki otomatik durum tekrar görünür. Panelde güncel görünüm için sayfayı yenileyin.
+
+Manuel doğrulama otomatik kontrol hatasının teknik nedenini düzeltmez; sizin kararınızı süreli ve ayrı bir kaynak olarak kaydeder. Özelliği mevcut kuruluma eklemek için `src/app.php`, `src/browser.php`, `public/index.php`, `public/style.css` dosyalarını güncelleyin; SQLite alanları otomatik eklenir. `var/` dizinini ve anahtarınızı koruyun.
+
 ### Filtreler ve görünüm
 
 Üstteki kartlara tıklayın:
@@ -536,6 +553,7 @@ php tests/features.php
 php tests/network.php
 php tests/browser.php
 php tests/browser-priority.php
+php tests/manual.php
 find src public bin tests -name '*.php' -exec php -l {} \;
 ```
 

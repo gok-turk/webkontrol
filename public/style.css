@@ -14,3 +14,6 @@ textarea{display:block;width:100%;border:1px solid #d9e2dc;border-radius:7px;pad
 .browser-settings summary{font-size:16px;font-weight:700}.browser-settings p{font-size:13px;line-height:1.7;color:#60786a}.browser-settings form{margin-top:16px}.browser-settings input{font-family:monospace;font-size:12px}
 
 .browser-progress{padding:18px 24px;margin:0 0 20px;border:1px solid #cddfd3;background:#eaf4ee;border-radius:14px}.browser-progress strong{font-size:15px;color:#267c56}.browser-progress p{font-size:12px;color:#526c5c;line-height:1.7;margin:7px 0 0}.legacy-result summary{line-height:1.5;color:#7c8077}.legacy-result .hint{overflow-wrap:anywhere}
+
+.badge.manual{background:#e4effb;color:#315c8a}.manual-note{background:#edf5fd;border-radius:7px;padding:10px 12px;color:#3c6188;font-size:11px;line-height:1.7}.sites-grid .actions .manual-action{flex:1 1 100%}.manual-action button{background:#e4effb;color:#315c8a;white-space:normal;line-height:1.4}
+.batch-controls .manual-help{flex-basis:100%;margin-top:0}
