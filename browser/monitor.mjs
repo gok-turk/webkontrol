@@ -3,6 +3,7 @@ import {appendFileSync} from 'node:fs';
 import {createProxy} from './proxy.mjs';
 import {browserCheck} from './check.mjs';
 import {createApi} from './api.mjs';
+import {lookupDomain} from './domain.mjs';
 const api=createApi({base:process.env.MONITOR_PANEL_URL??'',token:process.env.MONITOR_API_TOKEN});
 let proxy,browser,checked=0,failed=0;
 function summary(message){console.log(message);if(process.env.GITHUB_STEP_SUMMARY)appendFileSync(process.env.GITHUB_STEP_SUMMARY,message+'\n\n');}
@@ -22,6 +23,10 @@ try {
      if(result.state==='down' && /ERR_TUNNEL_CONNECTION_FAILED/.test(result.error??'')) {
       const reason=proxy.failureFor(new URL(job.url).hostname);
       if(reason)result.error=('Tarayıcı bağlantısı kurulamadı: '+reason+' '+result.error).slice(0,1800);
+     }
+     if(job.domain_lookup) {
+      const context=await browser.newContext();
+      try{result.domain=await lookupDomain(job.url,context.request);}finally{await context.close();}
      }
      await api.call('result',result);checked++;
      console.log('Saved browser result for site #'+job.id);

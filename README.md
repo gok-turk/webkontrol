@@ -43,6 +43,8 @@ WebKontrol'e domainlerinizi ekleyebilir, kontrol aralıklarını belirleyebilir,
 - Liste, ikili grid ve üçlü grid görünümü; dar ekranlarda otomatik sütun azaltma.
 - Görünüm ve filtre seçimini oturum boyunca hatırlama.
 - HTTP durumu, kontrol süresi, hata açıklaması ve son kontrol zamanı.
+- DNS, SSL/TLS, bağlantı, zaman aşımı ve HTTP hataları için anlaşılır erişilememe nedeni ve teknik ayrıntılar.
+- RDAP üzerinden domain bitiş tarihi, kalan gün ve 30 gün kala uyarı; günlük sorgu önbelleği.
 - Son 30 günlük kontrol örneklerine göre erişilebilirlik yüzdesi.
 - 90 günlük geçmiş saklama; kartlarda son 20 kontrolü gösterme.
 - Otomatik küçük resimler ve son güncellenme zamanı.
@@ -363,6 +365,16 @@ Tarayıcı modunda küçük resim adresi girmeniz gerekmez. İlk Chromium kontro
 
 Görüntü, kontrol edilen sayfanın ilk ekranına ait JPEG'dir; tam sayfa arşivi değildir. Çerez bildirimi veya açılır pencere görünebilir. Görüntü alınamazsa eski resim korunabilir; hata ayrı gösterilir. **Eski resmin görünmesi sitenin şu anda erişilebilir olduğunu kanıtlamaz.** Son kontrol ve küçük resim zamanları farklı olabilir.
 
+### Erişim hataları ve domain bitiş tarihi
+
+Hatalı site kartında **Erişilememe nedeni** alanı DNS, sertifika, bağlantı, zaman aşımı veya HTTP yanıtını açıklar. **Teknik hata ayrıntısı** bölümünde kontrolün özgün hata mesajı bulunur. Bu bilgi kontrol noktasından gözlenen durumu anlatır; örneğin HTTP 403 tek başına sitenin herkes için kapalı olduğunu kanıtlamaz.
+
+**Domain bitişi** ilk otomatik kontrolde RDAP üzerinden sorgulanır ve sonraki kontrollerde en fazla günde bir yenilenir. Alt alan adları için kayıtlı üst domain bulunur; URL yolu sorguya dahil edilmez. Tarih UTC olarak ve kalan günle gösterilir; son 30 gün ve süresi geçmiş kayıtlar vurgulanır. Bu tarih domain kaydına aittir, hosting veya SSL sertifikasının bitiş tarihi değildir.
+
+Bazı uzantılar RDAP sunmaz veya bitiş tarihini paylaşmaz; bu durumda neden kartta görünür. Geçici sorgu hatasında son bilinen tarih korunur ve uyarıyla gösterilir. IP adreslerinde domain tarihi bulunmaz. Günlük sorgular `rdap.org` ve yönlendirdiği kayıt servisine domain adını gönderir. Chromium modunda sorgu GitHub runner'ından, alternatif modda PHP cURL ile hostingden yapılır. Domain sorgusunun başarısız olması sitenin erişilebilirlik sonucunu değiştirmez.
+
+Güncellemede hem hostingdeki PHP dosyalarını hem GitHub'daki `browser/` dosyalarını güncelleyin. Mevcut SQLite veritabanına alanlar otomatik eklenir; domainler sonraki otomatik kontrolde sorgulanır.
+
 ## Zamanlama ve sonuçların anlamı
 
 ### 24 saatlik aralık ile 15 dakikalık workflow farklı şeylerdir
@@ -554,6 +566,7 @@ php tests/network.php
 php tests/browser.php
 php tests/browser-priority.php
 php tests/manual.php
+php tests/domain.php
 find src public bin tests -name '*.php' -exec php -l {} \;
 ```
 

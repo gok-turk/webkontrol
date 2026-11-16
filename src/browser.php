@@ -20,7 +20,7 @@ function claimBrowserJobs(int $limit=6): array {
         $nonce=bin2hex(random_bytes(24));
         $q=$db->prepare('UPDATE sites SET lease_until=?,browser_job=? WHERE id=? AND lease_until<=? AND next_check<=? AND manual_until<=?');
         $q->execute([$now+600,$nonce,$site['id'],$now,$now,$now]);
-        if($q->rowCount())$jobs[]=['id'=>(int)$site['id'],'url'=>$site['url'],'job'=>$nonce,'screenshot'=>($site['check_source']??'server')!=='browser' || !empty($site['thumbnail_error']) || (int)$site['thumbnail_at']<=$now-86400 || !is_file(thumbnailFile((int)$site['id']))];
+        if($q->rowCount())$jobs[]=['id'=>(int)$site['id'],'url'=>$site['url'],'job'=>$nonce,'domain_lookup'=>(int)$site['domain_checked']<=$now-86400,'screenshot'=>($site['check_source']??'server')!=='browser' || !empty($site['thumbnail_error']) || (int)$site['thumbnail_at']<=$now-86400 || !is_file(thumbnailFile((int)$site['id']))];
     }
     return $jobs;
 }
@@ -30,6 +30,8 @@ function acceptBrowserResult(array $data): void {
     $state=$data['state']??'';$error=$data['error']??null;
     if(!$id || !is_string($job) || !preg_match('/^[a-f0-9]{48}$/D',$job) || !in_array($state,['up','down'],true) || $status===false || $status<0 || $status>599 || $latency===false || $latency<0 || $latency>120000 || ($error!==null && (!is_string($error) || strlen($error)>2000)))throw new InvalidArgumentException('Geçersiz sonuç.');
     if($state==='up' && ($status<200 || $status>=400 || $error!==null))throw new InvalidArgumentException('Başarılı sonuç HTTP durumuyla uyuşmuyor.');
+    $domain=$data['domain']??null;
+    if($domain!==null && (!is_array($domain) || !isset($domain['expires']) || !is_int($domain['expires']) || $domain['expires']<0 || $domain['expires']>253402300799 || !array_key_exists('error',$domain) || ($domain['error']!==null && (!is_string($domain['error']) || strlen($domain['error'])>500))))throw new InvalidArgumentException('Geçersiz domain sonucu.');
     $image=null;
     if(isset($data['screenshot'])) {
         if(!is_string($data['screenshot']) || strlen($data['screenshot'])>2800000)throw new InvalidArgumentException('Resim boyutu geçersiz.');
@@ -47,6 +49,7 @@ function acceptBrowserResult(array $data): void {
         $at=time();$next=$at+($state==='down'?min(300,(int)$site['interval_seconds']):(int)$site['interval_seconds']);
         $db->prepare('INSERT INTO checks(site_id,checked_at,state,status,latency,error) VALUES(?,?,?,?,?,?)')->execute([$id,$at,$state,$status,$latency,$error]);
         $db->prepare("UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0,browser_job=NULL,browser_last_job=?,check_source='browser' WHERE id=?")->execute([$at,$state,$status,$latency,$error,$next,$job,$id]);
+        if($domain!==null)saveDomainResult((int)$id,$domain);
         if($image!==null) {
             $dir=dirname(thumbnailFile($id));if(!is_dir($dir) && !mkdir($dir,0700,true))throw new RuntimeException('Resim dizini oluşturulamadı.');
             $tmp=tempnam($dir,'browser-');if(!$tmp || file_put_contents($tmp,$image)===false || !rename($tmp,thumbnailFile($id)))throw new RuntimeException('Resim kaydedilemedi.');

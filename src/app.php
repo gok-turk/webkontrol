@@ -10,9 +10,9 @@ function db(): PDO {
     $db->exec('PRAGMA busy_timeout=10000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
     $db->exec('CREATE TABLE IF NOT EXISTS sites (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, interval_seconds INTEGER NOT NULL, next_check INTEGER NOT NULL DEFAULT 0, checked_at INTEGER, state TEXT, status INTEGER, latency INTEGER, error TEXT, thumbnail TEXT, lease_until INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS checks (id INTEGER PRIMARY KEY, site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE, checked_at INTEGER NOT NULL, state TEXT NOT NULL, status INTEGER, latency INTEGER NOT NULL, error TEXT); CREATE INDEX IF NOT EXISTS checks_site_time ON checks(site_id, checked_at);');
     $columns=array_column($db->query('PRAGMA table_info(sites)')->fetchAll(),'name');
-    foreach (['thumbnail_at','thumbnail_next','thumbnail_lease','thumbnail_error','browser_job','browser_last_job','check_source','manual_at','manual_until'] as $column) {
+    foreach (['thumbnail_at','thumbnail_next','thumbnail_lease','thumbnail_error','browser_job','browser_last_job','check_source','manual_at','manual_until','domain_expires','domain_checked','domain_error'] as $column) {
         if (!in_array($column,$columns,true)) {
-            try {$db->exec('ALTER TABLE sites ADD COLUMN '.$column.(in_array($column,['thumbnail_error','browser_job','browser_last_job','check_source'],true)?' TEXT':' INTEGER NOT NULL DEFAULT 0'));}
+            try {$db->exec('ALTER TABLE sites ADD COLUMN '.$column.(in_array($column,['thumbnail_error','browser_job','browser_last_job','check_source','domain_error'],true)?' TEXT':' INTEGER NOT NULL DEFAULT 0'));}
             catch(PDOException $e) {if(!in_array($column,array_column($db->query('PRAGMA table_info(sites)')->fetchAll(),'name'),true))throw $e;}
         }
     }
@@ -105,6 +105,7 @@ function probe(string $url): array {
             break;
         }
     } catch (Throwable $ex) { $error=$ex->getMessage(); }
+    if(!$error && ($status<200 || $status>=400))$error='Sunucu HTTP '.$status.' yanıtı verdi.';
     return ['state'=>!$error && $status>=200 && $status<400?'up':'down','status'=>$status,'latency'=>(int)round((microtime(true)-$start)*1000),'error'=>$error];
 }
 function checkSite(int $id, bool $force=false): bool {
@@ -115,7 +116,9 @@ function checkSite(int $id, bool $force=false): bool {
     $q->execute([$now+120,$id,$now,$now,$force?1:0,$now]);
     if (!$q->rowCount()) return false;
     $q=$db->prepare('SELECT * FROM sites WHERE id=?');$q->execute([$id]);$s=$q->fetch();if(!$s)return false;
-    $r=probe($s['url']);$at=time();
+    $r=probe($s['url']);
+    $domain=(int)$s['domain_checked']<=time()-86400?lookupDomain($s['url']):null;
+    $at=time();
     if(browserEnabled()) {
         $db->prepare('UPDATE sites SET lease_until=0,next_check=0 WHERE id=? AND lease_until=? AND browser_job IS NULL')->execute([$id,$now+120]);
         return false;
@@ -124,6 +127,7 @@ function checkSite(int $id, bool $force=false): bool {
     try {
         $q=$db->prepare('SELECT manual_until FROM sites WHERE id=?');$q->execute([$id]);
         if((int)$q->fetchColumn()>time()){$db->commit();return false;}
+        if($domain!==null)saveDomainResult($id,$domain);
         $db->prepare('INSERT INTO checks(site_id,checked_at,state,status,latency,error) VALUES(?,?,?,?,?,?)')->execute([$id,$at,$r['state'],$r['status'],$r['latency'],$r['error']]);
         $db->prepare('UPDATE sites SET checked_at=?,state=?,status=?,latency=?,error=?,next_check=?,lease_until=0,check_source=\'server\' WHERE id=?')->execute([$at,$r['state'],$r['status'],$r['latency'],$r['error'],$at+($r['state']==='down'?min(300,(int)$s['interval_seconds']):(int)$s['interval_seconds']),$id]);
         $db->prepare('DELETE FROM checks WHERE checked_at < ?')->execute([$at-90*86400]);$db->commit();
@@ -220,4 +224,77 @@ function effectiveSiteState(array $site, ?int $now=null): ?string {
 
 function browserEnabled(): bool {
     return is_file(dataDir().'/browser-enabled') && is_file(dataDir().'/browser-token');
+}
+
+// Explain observations without claiming an unverified root cause.
+function failureReason(?string $error, int $status=0): string {
+    $text=strtolower($error??'');
+    foreach([
+        'DNS çözümlenemedi; alan adı kaydı veya DNS hizmeti kontrol edilmeli.'=>'dns|enotfound|eai_again|err_name_not_resolved|resolve host',
+        'SSL/TLS bağlantısı doğrulanamadı; sertifika veya güvenli bağlantı ayarları kontrol edilmeli.'=>'ssl|tls|certificate|err_cert',
+        'Sayfa yanıt verdi ancak görünür içerik oluşmadı.'=>'görünür içerik',
+        'Bağlantı veya yanıt beklenirken zaman aşımı oluştu.'=>'timeout|timed.out|zaman aşımı|süresi aşıldı',
+        'Sunucu bağlantıyı reddetti; hedef servis veya port erişimi kontrol edilmeli.'=>'econnrefused|connection_refused|couldn.t connect|failed to connect',
+        'Bağlantı kesildi veya sıfırlandı.'=>'econnreset|connection_reset|connection_closed|empty_response',
+        'Yönlendirme sınırı aşıldı; yönlendirme döngüsü olabilir.'=>'too_many_redirects|çok fazla yönlendirme',
+        'Kontrol noktasından hedefe bağlantı kurulamadı.'=>'tunnel_connection_failed|bağlantı kurulamadı',
+    ] as $message=>$pattern)if(preg_match('~'.$pattern.'~i',$text))return $message;
+    return match(true) {
+        $status===401=>'Sunucu kimlik doğrulaması istiyor (HTTP 401).',
+        $status===403=>'Sunucu erişimi reddetti (HTTP 403); erişim kuralları veya bot engeli olabilir.',
+        $status===404=>'İstenen sayfa bulunamadı (HTTP 404).',
+        $status===429=>'Sunucu istek sınırı uyguluyor (HTTP 429).',
+        $status>=500=>'Hedef sunucu veya ağ geçidi hata yanıtı verdi (HTTP '.$status.').',
+        $status>=400=>'Sunucu HTTP '.$status.' hata yanıtı verdi.',
+        default=>'Kontrol tamamlanamadı; teknik ayrıntıları inceleyin.',
+    };
+}
+function domainExpiry(array $record): int {
+    $dates=[];
+    foreach($record['events']??[] as $event) {
+        if(($event['eventAction']??'')!=='expiration' || !is_string($event['eventDate']??null))continue;
+        $date=strtotime($event['eventDate']);if($date!==false && $date>0)$dates[]=$date;
+    }
+    return $dates?min($dates):0;
+}
+function saveDomainResult(int $id, array $result): void {
+    // Preserve the last known date when the registry is temporarily unavailable.
+    db()->prepare('UPDATE sites SET domain_expires=CASE WHEN CAST(? AS INTEGER)>0 THEN ? ELSE domain_expires END,domain_error=?,domain_checked=? WHERE id=?')->execute([$result['expires'],$result['expires'],$result['error'],time(),$id]);
+}
+function lookupDomain(string $url): array {
+    $host=strtolower(rtrim(trim((string)parse_url($url,PHP_URL_HOST),'[]'),'.'));
+    if(filter_var($host,FILTER_VALIDATE_IP) || !str_contains($host,'.'))return ['expires'=>0,'error'=>'IP adresleri için domain bitiş tarihi bulunmaz.'];
+    $deadline=microtime(true)+12;
+    try {
+        if(!function_exists('curl_init'))throw new RuntimeException('Domain sorgusu için PHP cURL eklentisi gerekli.');
+        // RDAP returns the registered domain; walk parent labels only on not-found.
+        for($level=0;$level<8 && str_contains($host,'.');$level++,$host=substr($host,strpos($host,'.')+1)) {
+            $endpoint='https://rdap.org/domain/'.rawurlencode($host);
+            for($hop=0;$hop<5;$hop++) {
+                $p=parse_url(validateUrl($endpoint));
+                if($p['scheme']!=='https' || (isset($p['port']) && $p['port']!==443))throw new RuntimeException('Geçersiz RDAP yönlendirmesi.');
+                $remaining=(int)floor($deadline-microtime(true));if($remaining<1)throw new RuntimeException('Domain sorgusu zaman aşımına uğradı.');
+                $ips=publicAddresses($p['host'],false,$deadline);$ip=$ips[0];$bytes='';$location=null;
+                $ch=curl_init($endpoint);
+                curl_setopt_array($ch,[CURLOPT_FOLLOWLOCATION=>false,CURLOPT_PROXY=>'',CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_CONNECTTIMEOUT=>min(3,$remaining),CURLOPT_TIMEOUT=>$remaining,CURLOPT_HTTPHEADER=>['Accept: application/rdap+json, application/json'],CURLOPT_RESOLVE=>[$p['host'].':443:'.(str_contains($ip,':')?'['.$ip.']':$ip)],CURLOPT_HEADERFUNCTION=>function($ch,$line)use(&$location){if(stripos($line,'Location:')===0)$location=trim(substr($line,9));return strlen($line);},CURLOPT_WRITEFUNCTION=>function($ch,$chunk)use(&$bytes){if(strlen($bytes)+strlen($chunk)>1048576)return 0;$bytes.=$chunk;return strlen($chunk);}]);
+                $ok=curl_exec($ch);$status=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);curl_close($ch);
+                if($ok===false)throw new RuntimeException('Domain kayıt servisine ulaşılamadı.');
+                if($status>=300 && $status<400 && $location){$endpoint=redirectUrl($endpoint,$location);continue;}
+                if($status===404)continue 2;
+                if($status!==200)throw new RuntimeException('Domain kayıt servisi HTTP '.$status.' yanıtı verdi.');
+                $record=json_decode($bytes,true);
+                if(!is_array($record) || ($record['objectClassName']??'')!=='domain' || strtolower($record['ldhName']??'')!==$host)throw new RuntimeException('Domain kayıt servisi geçersiz yanıt verdi.');
+                $expires=domainExpiry($record);
+                return ['expires'=>$expires,'error'=>$expires?null:'Kayıt servisi domain bitiş tarihini paylaşmıyor.'];
+            }
+            throw new RuntimeException('Domain kayıt servisi yönlendirme sınırı aşıldı.');
+        }
+        throw new RuntimeException('Bu domain için RDAP kaydı bulunamadı.');
+    }catch(Throwable $e){return ['expires'=>0,'error'=>$e->getMessage()];}
+}
+function domainExpiryLabel(array $site, ?int $now=null): string {
+    $expires=(int)($site['domain_expires']??0);
+    if(!$expires)return (int)($site['domain_checked']??0)?'Bitiş tarihi alınamadı':'İlk kontrolde sorgulanacak';
+    $remaining=$expires-($now??time());$days=(int)ceil(abs($remaining)/86400);
+    return gmdate('d.m.Y H:i',$expires).' UTC · '.($remaining<=0?'Süresi doldu ('.$days.' gün önce)':$days.' gün kaldı');
 }
